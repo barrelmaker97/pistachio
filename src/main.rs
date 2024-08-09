@@ -1,7 +1,7 @@
 use std::{env, thread, time};
 
 use rups::blocking::Connection;
-use rups::{Auth, ConfigBuilder};
+use rups::{ConfigBuilder};
 use std::convert::TryInto;
 
 fn main() -> rups::Result<()> {
@@ -12,13 +12,8 @@ fn main() -> rups::Result<()> {
         .flatten()
         .unwrap_or(3493);
 
-    let username = env::var("UPS_USER").ok();
-    let password = env::var("UPS_PASSWORD").ok();
-    let auth = username.map(|username| Auth::new(username, password));
-
     let config = ConfigBuilder::new()
         .with_host((host, port).try_into().unwrap_or_default())
-        .with_auth(auth)
         .with_debug(false) // Turn this on for debugging network chatter
         .build();
 
