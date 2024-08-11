@@ -1,10 +1,29 @@
 use std::{env, thread, time};
+use std::convert::TryInto;
+use std::net::SocketAddr;
 
 use rups::blocking::Connection;
 use rups::{ConfigBuilder};
-use std::convert::TryInto;
+
+use prometheus_exporter::prometheus::register_gauge;
+
+use env_logger::{Builder, Env};
+use log::info;
 
 fn main() -> rups::Result<()> {
+    // Setup exporter address
+    let addr_raw = "0.0.0.0:9184";
+    let addr: SocketAddr = addr_raw.parse().expect("Cannot parse listen address");
+
+    // Create metric and start exporter
+    let metric = register_gauge!("test_gauge", "test description").expect("Cannot create gauge");
+    metric.set(42.0);
+    prometheus_exporter::start(addr).expect("Cannot start exporter");
+
+    Builder::from_env(Env::default().default_filter_or("info")).init();
+    info!("Exporter started!");
+
+    let poll_rate = 10;
     let host = env::var("UPS_HOST").unwrap_or_else(|_| "localhost".into());
     let port = env::var("UPS_PORT")
         .ok()
@@ -18,8 +37,6 @@ fn main() -> rups::Result<()> {
         .build();
 
     let mut conn = Connection::new(&config)?;
-
-    let poll_rate = 5;
 
     // Print a list of all UPS devices
     let mut counter = 0;
