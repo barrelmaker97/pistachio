@@ -19,6 +19,7 @@ fn main() -> rups::Result<()> {
     let addr_raw = "0.0.0.0:9184";
     let addr: SocketAddr = addr_raw.parse().expect("Cannot parse listen address");
     let poll_rate = 10;
+    let ups_name = "ups";
     let host = env::var("UPS_HOST").unwrap_or_else(|_| "localhost".into());
     let port = env::var("UPS_PORT")
         .ok()
@@ -33,27 +34,32 @@ fn main() -> rups::Result<()> {
     // Create connection to UPS
     let mut conn = Connection::new(&config)?;
 
+    // Get list of available UPS variables
+    let available_vars = conn.list_vars(&ups_name).expect("Failed to connect to the UPS");
+    for var in available_vars {
+        let var_desc = conn.get_var_description(&ups_name, &var.name()).expect("Failed to get variable description");
+        let mut var_name = var.name().replace(".", "_");
+        if !var_name.starts_with("ups") {
+            var_name.insert_str(0, "ups_");
+        }
+        println!("Name: {}\nDesc: {}\n", var_name, var_desc);
+    }
+
     // Create metric and start exporter
-    let metric = register_gauge!("test_gauge", "test description").expect("Cannot create gauge");
+    let test_metric = register_gauge!("test_gauge", "test description").expect("Cannot create gauge");
     prometheus_exporter::start(addr).expect("Cannot start exporter");
 
     // TEST METRIC
-    metric.set(42.0);
+    test_metric.set(42.0);
 
     // Print a list of all UPS devices
     let mut counter = 0;
     loop {
         if counter % poll_rate == 0 {
-            println!("Connected UPS devices:");
-            for (name, description) in conn.list_ups()? {
-                println!("\t- Name: {}", name);
-                println!("\t  Description: {}", description);
-
-                // List UPS variables (key = val)
-                println!("\t  Variables:");
-                for var in conn.list_vars(&name)? {
-                    println!("\t\t- {}", var);
-                }
+            // List UPS variables (key = val)
+            println!("\t  Variables:");
+            for var in conn.list_vars(&ups_name)? {
+                println!("\t\t- {}", var);
             }
         }
         counter += 1;
