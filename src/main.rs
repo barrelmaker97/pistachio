@@ -16,23 +16,31 @@ fn main() -> rups::Result<()> {
     Builder::from_env(Env::default().default_filter_or("info")).init();
     info!("Exporter started!");
 
-    // Set configuration and exporter address
-    let addr_raw = "0.0.0.0:9184";
+    // Read config from the environment
+    let addr_raw = "0.0.0.0:9120";
     let addr: SocketAddr = addr_raw.parse().expect("Cannot parse listen address");
-    let poll_rate = 10;
-    let ups_name = "ups";
+    let ups_name = env::var("UPS_NAME").unwrap_or_else(|_| "ups".into());
     let host = env::var("UPS_HOST").unwrap_or_else(|_| "localhost".into());
     let port = env::var("UPS_PORT")
         .ok()
         .map(|s| s.parse::<u16>().ok())
         .flatten()
         .unwrap_or(3493);
+    let poll_rate = env::var("POLL_RATE")
+        .ok()
+        .map(|s| s.parse::<u16>().ok())
+        .flatten()
+        .unwrap_or(10);
+
+    // Log config info
+    info!("UPS to be checked: {ups_name}@{host}:{port}");
+    info!("Poll Rate: Every {poll_rate} seconds");
+
+    // Create connection to UPS
     let config = ConfigBuilder::new()
         .with_host((host, port).try_into().unwrap_or_default())
         .with_debug(false) // Turn this on for debugging network chatter
         .build();
-
-    // Create connection to UPS
     let mut conn = Connection::new(&config)?;
 
     // Get list of available UPS variables
@@ -47,12 +55,9 @@ fn main() -> rups::Result<()> {
         let gauge = register_gauge!(&var_name, &var_desc).expect("Could not create gauge");
         metrics.insert(var_name, gauge);
     }
+    info!("{} metrics available to be exported", metrics.len());
 
-    for (name, gauge) in metrics {
-        println!("{}", name);
-    }
-
-    // Create metric and start exporter
+    // Create test metric and start exporter
     let test_metric = register_gauge!("test_gauge", "test description").expect("Cannot create gauge");
     prometheus_exporter::start(addr).expect("Cannot start exporter");
 
@@ -64,7 +69,6 @@ fn main() -> rups::Result<()> {
     loop {
         if counter % poll_rate == 0 {
             // List UPS variables (key = val)
-            println!("\t  Variables:");
             for var in conn.list_vars(&ups_name)? {
                 println!("\t\t- {}", var);
             }
