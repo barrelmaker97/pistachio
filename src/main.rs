@@ -1,6 +1,7 @@
 use std::{env, thread, time};
 use std::convert::TryInto;
 use std::net::SocketAddr;
+use std::collections::HashMap;
 
 use rups::blocking::Connection;
 use rups::{ConfigBuilder};
@@ -35,6 +36,7 @@ fn main() -> rups::Result<()> {
     let mut conn = Connection::new(&config)?;
 
     // Get list of available UPS variables
+    let mut metrics = HashMap::new();
     let available_vars = conn.list_vars(&ups_name).expect("Failed to connect to the UPS");
     for var in available_vars {
         let var_desc = conn.get_var_description(&ups_name, &var.name()).expect("Failed to get variable description");
@@ -42,7 +44,12 @@ fn main() -> rups::Result<()> {
         if !var_name.starts_with("ups") {
             var_name.insert_str(0, "ups_");
         }
-        println!("Name: {}\nDesc: {}\n", var_name, var_desc);
+        let gauge = register_gauge!(&var_name, &var_desc).expect("Could not create gauge");
+        metrics.insert(var_name, gauge);
+    }
+
+    for (name, gauge) in metrics {
+        println!("{}", name);
     }
 
     // Create metric and start exporter
