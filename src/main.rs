@@ -11,7 +11,7 @@ use prometheus_exporter::prometheus::register_gauge;
 use prometheus_exporter::prometheus::register_gauge_vec;
 
 use env_logger::{Builder, Env};
-use log::{debug, info};
+use log::{debug, info, warn};
 
 const STATUSES: &[&str] = &["OL", "OB", "LB", "RB", "CHRG", "DISCHRG", "ALARM", "OVER", "TRIM", "BOOST", "BYPASS", "OFF", "CAL", "TEST", "FSD"];
 const BEEPER_STATUSES: &[&str] = &["enabled", "disabled", "muted"];
@@ -78,6 +78,7 @@ fn main() -> rups::Result<()> {
     // Create label gauges
     let status_gauge = register_gauge_vec!("ups_status", "UPS Status Code", &["status"]).expect("Cannot create gauge");
     let beeper_status_gauge = register_gauge_vec!("ups_beeper_status", "Beeper Status", &["status"]).expect("Cannot create gauge");
+    info!("{} basic gauges and 2 labeled gauges will be exported", gauges.len());
 
     // Start prometheus exporter
     let addr = SocketAddr::new(BIND_ADDR, bind_port);
@@ -92,7 +93,7 @@ fn main() -> rups::Result<()> {
                 // Update basic gauges
                 match gauges.get(var_name.into()) {
                     Some(gauge) => gauge.set(value),
-                    None => info!("Failed to update a gauge")
+                    None => warn!("Gauge does not exist for variable {}", var_name)
                 }
             } else if var_name == "ups.status" {
                 // Update status label gauge
