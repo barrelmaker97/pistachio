@@ -66,26 +66,6 @@ fn main() -> rups::Result<()> {
     let status_gauge = register_gauge_vec!("ups_status", "UPS Status Code", &["status"]).expect("Cannot create gauge");
     let beeper_status_gauge = register_gauge_vec!("ups_beeper_status", "Beeper Status", &["status"]).expect("Cannot create gauge");
 
-    let current_status = conn.get_var(&ups_name, "ups.status").unwrap().value();
-    for state in STATUSES {
-        let gauge = status_gauge.get_metric_with_label_values(&[state]).unwrap();
-        if current_status.contains(state) {
-            gauge.set(1.0);
-        } else {
-            gauge.set(0.0);
-        }
-    }
-
-    let current_beeper_status = conn.get_var(&ups_name, "ups.beeper.status").unwrap().value();
-    for state in BEEPER_STATUSES {
-        let gauge = beeper_status_gauge.get_metric_with_label_values(&[state]).unwrap();
-        if current_beeper_status.contains(state) {
-            gauge.set(1.0);
-        } else {
-            gauge.set(0.0);
-        }
-    }
-
     // Start exporter
     prometheus_exporter::start(addr).expect("Cannot start exporter");
 
@@ -94,14 +74,37 @@ fn main() -> rups::Result<()> {
     loop {
         debug!("Loop counter {counter}");
         if counter % poll_rate == 0 {
-            // List UPS variables (key = val)
             debug!("Polling UPS...");
+
+            // Update basic metrics
             for var in conn.list_vars(&ups_name)? {
                 if let Ok(_) = var.value().parse::<f64>() {
                     match metrics.get(var.name().into()) {
                         Some(gauge) => gauge.set(var.value().parse().unwrap()),
                         None => info!("Failed to update a gauge")
                     }
+                }
+            }
+
+            // Update status label metric
+            let current_status = conn.get_var(&ups_name, "ups.status").unwrap().value();
+            for state in STATUSES {
+                let gauge = status_gauge.get_metric_with_label_values(&[state]).unwrap();
+                if current_status.contains(state) {
+                    gauge.set(1.0);
+                } else {
+                    gauge.set(0.0);
+                }
+            }
+
+            // Update beeper status label metric
+            let current_beeper_status = conn.get_var(&ups_name, "ups.beeper.status").unwrap().value();
+            for state in BEEPER_STATUSES {
+                let gauge = beeper_status_gauge.get_metric_with_label_values(&[state]).unwrap();
+                if current_beeper_status.contains(state) {
+                    gauge.set(1.0);
+                } else {
+                    gauge.set(0.0);
                 }
             }
         }
