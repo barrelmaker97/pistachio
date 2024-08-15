@@ -66,9 +66,10 @@ fn main() -> rups::Result<()> {
                 }
                 let gauge = register_gauge!(gauge_name, gauge_desc).expect("Could not create gauge");
                 gauges.insert(String::from(raw_name), gauge);
+                debug!("Gauge created for variable {raw_name}")
             }
             Err(_) => {
-                debug!("Not creating a gauge for {raw_name} since it is not a number")
+                debug!("Not creating a gauge for variable {raw_name} since it is not a number")
             }
         }
     }
@@ -85,13 +86,14 @@ fn main() -> rups::Result<()> {
     loop {
         debug!("Polling UPS...");
         for var in conn.list_vars(&ups_name)? {
+            let var_name = var.name();
             if let Ok(value) = var.value().parse::<f64>() {
                 // Update basic gauges
-                match gauges.get(var.name().into()) {
+                match gauges.get(var_name.into()) {
                     Some(gauge) => gauge.set(value),
                     None => info!("Failed to update a gauge")
                 }
-            } else if var.name() == "ups.status" {
+            } else if var_name == "ups.status" {
                 // Update status label gauge
                 for state in STATUSES {
                     let gauge = status_gauge.get_metric_with_label_values(&[state]).unwrap();
@@ -101,7 +103,7 @@ fn main() -> rups::Result<()> {
                         gauge.set(0.0);
                     }
                 }
-            } else if var.name() == "ups.beeper.status" {
+            } else if var_name == "ups.beeper.status" {
                 // Update beeper status label gauge
                 for state in BEEPER_STATUSES {
                     let gauge = beeper_status_gauge.get_metric_with_label_values(&[state]).unwrap();
@@ -111,6 +113,8 @@ fn main() -> rups::Result<()> {
                         gauge.set(0.0);
                     }
                 }
+            } else {
+                debug!("Variable {var_name} does not have an associated gauge to update");
             }
         }
         thread::sleep(time::Duration::from_secs(poll_rate));
