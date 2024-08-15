@@ -1,6 +1,7 @@
 use std::{env, thread, time};
 use std::convert::TryInto;
 use std::net::SocketAddr;
+use std::net::{IpAddr, Ipv4Addr};
 use std::collections::HashMap;
 
 use rups::blocking::Connection;
@@ -14,6 +15,8 @@ use log::{debug, info};
 
 const STATUSES: &[&str] = &["OL", "OB", "LB", "RB", "CHRG", "DISCHRG", "ALARM", "OVER", "TRIM", "BOOST", "BYPASS", "OFF", "CAL", "TEST", "FSD"];
 const BEEPER_STATUSES: &[&str] = &["enabled", "disabled", "muted"];
+const BIND_ADDR: IpAddr = IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0));
+const BIND_PORT: u16 = 9120;
 
 fn main() -> rups::Result<()> {
     // Initialize logging
@@ -21,8 +24,6 @@ fn main() -> rups::Result<()> {
     info!("Exporter started!");
 
     // Read config from the environment
-    let addr_raw = "0.0.0.0:9120";
-    let addr: SocketAddr = addr_raw.parse().expect("Cannot parse listen address");
     let ups_name = env::var("UPS_NAME").unwrap_or_else(|_| "ups".into());
     let ups_host = env::var("UPS_HOST").unwrap_or_else(|_| "localhost".into());
     let ups_port = env::var("UPS_PORT")
@@ -48,7 +49,7 @@ fn main() -> rups::Result<()> {
     let mut conn = Connection::new(&config)?;
 
     // Get list of available UPS variables
-    let mut metrics = HashMap::new();
+    let mut gauges = HashMap::new();
     let available_vars = conn.list_vars(&ups_name).expect("Failed to connect to the UPS");
     for var in available_vars {
         if let Ok(_) = var.value().parse::<f64>() {
@@ -58,15 +59,16 @@ fn main() -> rups::Result<()> {
                 var_name.insert_str(0, "ups_");
             }
             let gauge = register_gauge!(var_name, var_desc).expect("Could not create gauge");
-            metrics.insert(String::from(var.name()), gauge);
+            gauges.insert(String::from(var.name()), gauge);
         }
     }
 
-    // Create label metrics
+    // Create label gauges
     let status_gauge = register_gauge_vec!("ups_status", "UPS Status Code", &["status"]).expect("Cannot create gauge");
     let beeper_status_gauge = register_gauge_vec!("ups_beeper_status", "Beeper Status", &["status"]).expect("Cannot create gauge");
 
     // Start exporter
+    let addr = SocketAddr::new(BIND_ADDR, BIND_PORT);
     prometheus_exporter::start(addr).expect("Cannot start exporter");
 
     // Print a list of all UPS devices
@@ -78,7 +80,7 @@ fn main() -> rups::Result<()> {
             for var in conn.list_vars(&ups_name)? {
                 if let Ok(_) = var.value().parse::<f64>() {
                     // Update basic gauges
-                    match metrics.get(var.name().into()) {
+                    match gauges.get(var.name().into()) {
                         Some(gauge) => gauge.set(var.value().parse().unwrap()),
                         None => info!("Failed to update a gauge")
                     }
