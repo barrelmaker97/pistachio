@@ -56,14 +56,20 @@ fn main() -> rups::Result<()> {
     let mut gauges = HashMap::new();
     let available_vars = conn.list_vars(&ups_name).expect("Failed to connect to the UPS");
     for var in available_vars {
-        if let Ok(_) = var.value().parse::<f64>() {
-            let var_desc = conn.get_var_description(&ups_name, &var.name()).expect("Failed to get variable description");
-            let mut var_name = var.name().replace(".", "_");
-            if !var_name.starts_with("ups") {
-                var_name.insert_str(0, "ups_");
+        let raw_name = var.name();
+        match var.value().parse::<f64>() {
+            Ok(_) => {
+                let gauge_desc = conn.get_var_description(&ups_name, &raw_name).expect("Failed to get variable description");
+                let mut gauge_name = raw_name.replace(".", "_");
+                if !gauge_name.starts_with("ups") {
+                    gauge_name.insert_str(0, "ups_");
+                }
+                let gauge = register_gauge!(gauge_name, gauge_desc).expect("Could not create gauge");
+                gauges.insert(String::from(raw_name), gauge);
             }
-            let gauge = register_gauge!(var_name, var_desc).expect("Could not create gauge");
-            gauges.insert(String::from(var.name()), gauge);
+            Err(_) => {
+                debug!("Not creating a gauge for {raw_name} since it is not a number")
+            }
         }
     }
 
