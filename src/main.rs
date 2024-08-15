@@ -7,6 +7,7 @@ use rups::blocking::Connection;
 use rups::{ConfigBuilder};
 
 use prometheus_exporter::prometheus::register_gauge;
+use prometheus_exporter::prometheus::register_gauge_vec;
 
 use env_logger::{Builder, Env};
 use log::info;
@@ -52,17 +53,22 @@ fn main() -> rups::Result<()> {
         if !var_name.starts_with("ups") {
             var_name.insert_str(0, "ups_");
         }
-        let gauge = register_gauge!(&var_name, &var_desc).expect("Could not create gauge");
-        metrics.insert(var_name, gauge);
+        let gauge = register_gauge!(var_name, var_desc).expect("Could not create gauge");
+        metrics.insert(String::from(var.name()), gauge);
     }
     info!("{} metrics available to be exported", metrics.len());
 
-    // Create test metric and start exporter
-    let test_metric = register_gauge!("test_gauge", "test description").expect("Cannot create gauge");
-    prometheus_exporter::start(addr).expect("Cannot start exporter");
+    // Create test metrics
+    let test_gauge = register_gauge!("test_gauge", "test description").expect("Cannot create gauge");
+    let test_gauge_vec = register_gauge_vec!("test_gauge_vec", "test description", &["status"]).expect("Cannot create gauge");
 
-    // TEST METRIC
-    test_metric.set(42.0);
+    // Set test metrics
+    test_gauge.set(42.0);
+    test_gauge_vec.get_metric_with_label_values(&["OL"]).unwrap().set(1.0);
+    test_gauge_vec.get_metric_with_label_values(&["TRIM"]).unwrap().set(0.0);
+
+    // Start exporter
+    prometheus_exporter::start(addr).expect("Cannot start exporter");
 
     // Print a list of all UPS devices
     let mut counter = 0;
@@ -70,8 +76,15 @@ fn main() -> rups::Result<()> {
         if counter % poll_rate == 0 {
             // List UPS variables (key = val)
             for var in conn.list_vars(&ups_name)? {
-                println!("\t\t- {}", var);
+                println!("{}", var);
+                // There are problems right now since label gauges are not being made
+                // They are being parsed as though they are simple gauges
+                //match metrics.get(var.name().into()) {
+                    //Some(gauge) => gauge.set(var.value().parse().unwrap()),
+                    //None => info!("Failed to update a gauge")
+                //}
             }
+            println!("\n");
         }
         counter += 1;
         thread::sleep(time::Duration::from_secs(1));
