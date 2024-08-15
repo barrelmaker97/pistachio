@@ -52,7 +52,8 @@ fn main() -> rups::Result<()> {
         .build();
     let mut conn = Connection::new(&config)?;
 
-    // Get list of available UPS variables
+    // Get list of available UPS variables and create a map of associated prometheus gauges
+    // Gauges must be floats, so this will only create gauges for variables that are numbers
     let mut gauges = HashMap::new();
     let available_vars = conn.list_vars(&ups_name).expect("Failed to get available variables from the UPS");
     for var in available_vars {
@@ -78,11 +79,11 @@ fn main() -> rups::Result<()> {
     let status_gauge = register_gauge_vec!("ups_status", "UPS Status Code", &["status"]).expect("Cannot create gauge");
     let beeper_status_gauge = register_gauge_vec!("ups_beeper_status", "Beeper Status", &["status"]).expect("Cannot create gauge");
 
-    // Start exporter
+    // Start prometheus exporter
     let addr = SocketAddr::new(BIND_ADDR, bind_port);
     prometheus_exporter::start(addr).expect("Failed to start prometheus exporter");
 
-    // Print a list of all UPS devices
+    // Main loop that polls for variables and updates associated gauges
     loop {
         debug!("Polling UPS...");
         for var in conn.list_vars(&ups_name)? {
