@@ -4,13 +4,16 @@ use std::net::SocketAddr;
 use std::collections::HashMap;
 
 use rups::blocking::Connection;
-use rups::{ConfigBuilder};
+use rups::ConfigBuilder;
 
 use prometheus_exporter::prometheus::register_gauge;
 use prometheus_exporter::prometheus::register_gauge_vec;
 
 use env_logger::{Builder, Env};
 use log::{debug, info};
+
+const STATUSES: &[&str] = &["OL", "OB", "LB", "RB", "CHRG", "DISCHRG", "ALARM", "OVER", "TRIM", "BOOST", "BYPASS", "OFF", "CAL", "TEST", "FSD"];
+const BEEPER_STATUSES: &[&str] = &["enabled", "disabled", "muted"];
 
 fn main() -> rups::Result<()> {
     // Initialize logging
@@ -58,16 +61,30 @@ fn main() -> rups::Result<()> {
             metrics.insert(String::from(var.name()), gauge);
         }
     }
-    info!("{} metrics available to be exported", metrics.len());
 
-    // Create test metrics
-    let test_gauge = register_gauge!("test_gauge", "test description").expect("Cannot create gauge");
-    let test_gauge_vec = register_gauge_vec!("test_gauge_vec", "test description", &["status"]).expect("Cannot create gauge");
+    // Create label metrics
+    let status_gauge = register_gauge_vec!("ups_status", "UPS Status Code", &["status"]).expect("Cannot create gauge");
+    let beeper_status_gauge = register_gauge_vec!("ups_beeper_status", "Beeper Status", &["status"]).expect("Cannot create gauge");
 
-    // Set test metrics
-    test_gauge.set(42.0);
-    test_gauge_vec.get_metric_with_label_values(&["OL"]).unwrap().set(1.0);
-    test_gauge_vec.get_metric_with_label_values(&["TRIM"]).unwrap().set(0.0);
+    let current_status = conn.get_var(&ups_name, "ups.status").unwrap().value();
+    for state in STATUSES {
+        let gauge = status_gauge.get_metric_with_label_values(&[state]).unwrap();
+        if current_status.contains(state) {
+            gauge.set(1.0);
+        } else {
+            gauge.set(0.0);
+        }
+    }
+
+    let current_beeper_status = conn.get_var(&ups_name, "ups.beeper.status").unwrap().value();
+    for state in BEEPER_STATUSES {
+        let gauge = beeper_status_gauge.get_metric_with_label_values(&[state]).unwrap();
+        if current_beeper_status.contains(state) {
+            gauge.set(1.0);
+        } else {
+            gauge.set(0.0);
+        }
+    }
 
     // Start exporter
     prometheus_exporter::start(addr).expect("Cannot start exporter");
