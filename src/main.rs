@@ -33,7 +33,7 @@ fn main() -> rups::Result<()> {
         .unwrap_or(3493);
     let poll_rate = env::var("POLL_RATE")
         .ok()
-        .map(|s| s.parse::<u16>().ok())
+        .map(|s| s.parse::<u64>().ok())
         .flatten()
         .unwrap_or(10);
 
@@ -72,42 +72,37 @@ fn main() -> rups::Result<()> {
     prometheus_exporter::start(addr).expect("Cannot start exporter");
 
     // Print a list of all UPS devices
-    let mut counter = 0;
     loop {
-        debug!("Loop counter {counter}");
-        if counter % poll_rate == 0 {
-            debug!("Polling UPS...");
-            for var in conn.list_vars(&ups_name)? {
-                if let Ok(_) = var.value().parse::<f64>() {
-                    // Update basic gauges
-                    match gauges.get(var.name().into()) {
-                        Some(gauge) => gauge.set(var.value().parse().unwrap()),
-                        None => info!("Failed to update a gauge")
+        debug!("Polling UPS...");
+        for var in conn.list_vars(&ups_name)? {
+            if let Ok(value) = var.value().parse::<f64>() {
+                // Update basic gauges
+                match gauges.get(var.name().into()) {
+                    Some(gauge) => gauge.set(value),
+                    None => info!("Failed to update a gauge")
+                }
+            } else if var.name() == "ups.status" {
+                // Update status label gauge
+                for state in STATUSES {
+                    let gauge = status_gauge.get_metric_with_label_values(&[state]).unwrap();
+                    if var.value().contains(state) {
+                        gauge.set(1.0);
+                    } else {
+                        gauge.set(0.0);
                     }
-                } else if var.name() == "ups.status" {
-                    // Update status label gauge
-                    for state in STATUSES {
-                        let gauge = status_gauge.get_metric_with_label_values(&[state]).unwrap();
-                        if var.value().contains(state) {
-                            gauge.set(1.0);
-                        } else {
-                            gauge.set(0.0);
-                        }
-                    }
-                } else if var.name() == "ups.beeper.status" {
-                    // Update beeper status label gauge
-                    for state in BEEPER_STATUSES {
-                        let gauge = beeper_status_gauge.get_metric_with_label_values(&[state]).unwrap();
-                        if var.value().contains(state) {
-                            gauge.set(1.0);
-                        } else {
-                            gauge.set(0.0);
-                        }
+                }
+            } else if var.name() == "ups.beeper.status" {
+                // Update beeper status label gauge
+                for state in BEEPER_STATUSES {
+                    let gauge = beeper_status_gauge.get_metric_with_label_values(&[state]).unwrap();
+                    if var.value().contains(state) {
+                        gauge.set(1.0);
+                    } else {
+                        gauge.set(0.0);
                     }
                 }
             }
         }
-        counter += 1;
-        thread::sleep(time::Duration::from_secs(1));
+        thread::sleep(time::Duration::from_secs(poll_rate));
     }
 }
