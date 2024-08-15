@@ -54,17 +54,17 @@ fn main() -> rups::Result<()> {
 
     // Get list of available UPS variables
     let mut gauges = HashMap::new();
-    let available_vars = conn.list_vars(&ups_name).expect("Failed to connect to the UPS");
+    let available_vars = conn.list_vars(&ups_name).expect("Failed to get available variables from the UPS");
     for var in available_vars {
         let raw_name = var.name();
         match var.value().parse::<f64>() {
             Ok(_) => {
-                let gauge_desc = conn.get_var_description(&ups_name, &raw_name).expect("Failed to get variable description");
+                let gauge_desc = conn.get_var_description(&ups_name, &raw_name).expect("Failed to get description for a variable");
                 let mut gauge_name = raw_name.replace(".", "_");
                 if !gauge_name.starts_with("ups") {
                     gauge_name.insert_str(0, "ups_");
                 }
-                let gauge = register_gauge!(gauge_name, gauge_desc).expect("Could not create gauge");
+                let gauge = register_gauge!(gauge_name, gauge_desc).expect("Could not create gauge for a variable");
                 gauges.insert(String::from(raw_name), gauge);
                 debug!("Gauge created for variable {raw_name}")
             }
@@ -80,7 +80,7 @@ fn main() -> rups::Result<()> {
 
     // Start exporter
     let addr = SocketAddr::new(BIND_ADDR, bind_port);
-    prometheus_exporter::start(addr).expect("Cannot start exporter");
+    prometheus_exporter::start(addr).expect("Failed to start prometheus exporter");
 
     // Print a list of all UPS devices
     loop {
