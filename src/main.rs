@@ -17,7 +17,7 @@ const STATUSES: &[&str] = &["OL", "OB", "LB", "RB", "CHRG", "DISCHRG", "ALARM", 
 const BEEPER_STATUSES: &[&str] = &["enabled", "disabled", "muted"];
 const BIND_ADDR: IpAddr = IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0));
 
-fn main() -> rups::Result<()> {
+fn main() {
     // Initialize logging
     Builder::from_env(Env::default().default_filter_or("info")).init();
     info!("Exporter started!");
@@ -49,8 +49,9 @@ fn main() -> rups::Result<()> {
     let config = ConfigBuilder::new()
         .with_host((ups_host, ups_port).try_into().unwrap_or_default())
         .with_debug(false) // Turn this on for debugging network chatter
+        .with_timeout(time::Duration::from_secs(poll_rate - 1))
         .build();
-    let mut conn = Connection::new(&config)?;
+    let mut conn = Connection::new(&config).expect("Failed to connect to the UPS");
 
     // Get list of available UPS variables and create a map of associated prometheus gauges
     // Gauges must be floats, so this will only create gauges for variables that are numbers
@@ -87,36 +88,55 @@ fn main() -> rups::Result<()> {
     // Main loop that polls for variables and updates associated gauges
     loop {
         debug!("Polling UPS...");
-        for var in conn.list_vars(&ups_name)? {
-            let var_name = var.name();
-            if let Ok(value) = var.value().parse::<f64>() {
-                // Update basic gauges
-                match gauges.get(var_name.into()) {
-                    Some(gauge) => gauge.set(value),
-                    None => warn!("Gauge does not exist for variable {}", var_name)
+        match conn.list_vars(&ups_name) {
+            Ok(var_list) => {
+                for var in var_list {
+                    let var_name = var.name();
+                    if let Ok(value) = var.value().parse::<f64>() {
+                        // Update basic gauges
+                        match gauges.get(var_name.into()) {
+                            Some(gauge) => gauge.set(value),
+                            None => warn!("Gauge does not exist for variable {}", var_name)
+                        }
+                    } else if var_name == "ups.status" {
+                        // Update status label gauge
+                        for state in STATUSES {
+                            let gauge = status_gauge.get_metric_with_label_values(&[state]).unwrap();
+                            if var.value().contains(state) {
+                                gauge.set(1.0);
+                            } else {
+                                gauge.set(0.0);
+                            }
+                        }
+                    } else if var_name == "ups.beeper.status" {
+                        // Update beeper status label gauge
+                        for state in BEEPER_STATUSES {
+                            let gauge = beeper_status_gauge.get_metric_with_label_values(&[state]).unwrap();
+                            if var.value().contains(state) {
+                                gauge.set(1.0);
+                            } else {
+                                gauge.set(0.0);
+                            }
+                        }
+                    } else {
+                        debug!("Variable {var_name} does not have an associated gauge to update");
+                    }
                 }
-            } else if var_name == "ups.status" {
-                // Update status label gauge
+            }
+            Err(err) => {
+                // Log warning and set gauges to 0 to indicate failure
+                warn!("Failed to connect to the UPS");
+                debug!("Err: {err}");
+                for (_, gauge) in &gauges {
+                    gauge.set(0.0);
+                }
                 for state in STATUSES {
-                    let gauge = status_gauge.get_metric_with_label_values(&[state]).unwrap();
-                    if var.value().contains(state) {
-                        gauge.set(1.0);
-                    } else {
-                        gauge.set(0.0);
-                    }
+                    status_gauge.get_metric_with_label_values(&[state]).unwrap().set(0.0);
                 }
-            } else if var_name == "ups.beeper.status" {
-                // Update beeper status label gauge
                 for state in BEEPER_STATUSES {
-                    let gauge = beeper_status_gauge.get_metric_with_label_values(&[state]).unwrap();
-                    if var.value().contains(state) {
-                        gauge.set(1.0);
-                    } else {
-                        gauge.set(0.0);
-                    }
+                    beeper_status_gauge.get_metric_with_label_values(&[state]).unwrap().set(0.0);
                 }
-            } else {
-                debug!("Variable {var_name} does not have an associated gauge to update");
+                debug!("Reset gauges to zero because the UPS was unreachable")
             }
         }
         thread::sleep(time::Duration::from_secs(poll_rate));
