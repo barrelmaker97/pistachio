@@ -16,7 +16,6 @@ use log::{debug, info};
 const STATUSES: &[&str] = &["OL", "OB", "LB", "RB", "CHRG", "DISCHRG", "ALARM", "OVER", "TRIM", "BOOST", "BYPASS", "OFF", "CAL", "TEST", "FSD"];
 const BEEPER_STATUSES: &[&str] = &["enabled", "disabled", "muted"];
 const BIND_ADDR: IpAddr = IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0));
-const BIND_PORT: u16 = 9120;
 
 fn main() -> rups::Result<()> {
     // Initialize logging
@@ -36,6 +35,11 @@ fn main() -> rups::Result<()> {
         .map(|s| s.parse::<u64>().ok())
         .flatten()
         .unwrap_or(10);
+    let bind_port = env::var("BIND_PORT")
+        .ok()
+        .map(|s| s.parse::<u16>().ok())
+        .flatten()
+        .unwrap_or(9120);
 
     // Log config info
     info!("UPS to be checked: {ups_name}@{ups_host}:{ups_port}");
@@ -68,7 +72,7 @@ fn main() -> rups::Result<()> {
     let beeper_status_gauge = register_gauge_vec!("ups_beeper_status", "Beeper Status", &["status"]).expect("Cannot create gauge");
 
     // Start exporter
-    let addr = SocketAddr::new(BIND_ADDR, BIND_PORT);
+    let addr = SocketAddr::new(BIND_ADDR, bind_port);
     prometheus_exporter::start(addr).expect("Cannot start exporter");
 
     // Print a list of all UPS devices
