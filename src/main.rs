@@ -75,36 +75,33 @@ fn main() -> rups::Result<()> {
         debug!("Loop counter {counter}");
         if counter % poll_rate == 0 {
             debug!("Polling UPS...");
-
-            // Update basic metrics
             for var in conn.list_vars(&ups_name)? {
                 if let Ok(_) = var.value().parse::<f64>() {
+                    // Update basic gauges
                     match metrics.get(var.name().into()) {
                         Some(gauge) => gauge.set(var.value().parse().unwrap()),
                         None => info!("Failed to update a gauge")
                     }
-                }
-            }
-
-            // Update status label metric
-            let current_status = conn.get_var(&ups_name, "ups.status").unwrap().value();
-            for state in STATUSES {
-                let gauge = status_gauge.get_metric_with_label_values(&[state]).unwrap();
-                if current_status.contains(state) {
-                    gauge.set(1.0);
-                } else {
-                    gauge.set(0.0);
-                }
-            }
-
-            // Update beeper status label metric
-            let current_beeper_status = conn.get_var(&ups_name, "ups.beeper.status").unwrap().value();
-            for state in BEEPER_STATUSES {
-                let gauge = beeper_status_gauge.get_metric_with_label_values(&[state]).unwrap();
-                if current_beeper_status.contains(state) {
-                    gauge.set(1.0);
-                } else {
-                    gauge.set(0.0);
+                } else if var.name() == "ups.status" {
+                    // Update status label gauge
+                    for state in STATUSES {
+                        let gauge = status_gauge.get_metric_with_label_values(&[state]).unwrap();
+                        if var.value().contains(state) {
+                            gauge.set(1.0);
+                        } else {
+                            gauge.set(0.0);
+                        }
+                    }
+                } else if var.name() == "ups.beeper.status" {
+                    // Update beeper status label gauge
+                    for state in BEEPER_STATUSES {
+                        let gauge = beeper_status_gauge.get_metric_with_label_values(&[state]).unwrap();
+                        if var.value().contains(state) {
+                            gauge.set(1.0);
+                        } else {
+                            gauge.set(0.0);
+                        }
+                    }
                 }
             }
         }
