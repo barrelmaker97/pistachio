@@ -28,12 +28,16 @@ fn main() {
     let ups_port = env::var("UPS_PORT")
         .and_then(|s| s.parse::<u16>().map_err(|_| env::VarError::NotPresent))
         .unwrap_or(3493);
-    let poll_rate = env::var("POLL_RATE")
-        .and_then(|s| s.parse::<u64>().map_err(|_| env::VarError::NotPresent))
-        .unwrap_or(10);
     let bind_port = env::var("BIND_PORT")
         .and_then(|s| s.parse::<u16>().map_err(|_| env::VarError::NotPresent))
         .unwrap_or(9120);
+    let mut poll_rate = env::var("POLL_RATE")
+        .and_then(|s| s.parse::<u64>().map_err(|_| env::VarError::NotPresent))
+        .unwrap_or(10);
+    if poll_rate < 2 {
+        warn!("POLL_RATE is too low, increasing to minimum of 2 seconds");
+        poll_rate = 2;
+    }
 
     // Log config info
     info!("UPS to be checked: {ups_name}@{ups_host}:{ups_port}");
