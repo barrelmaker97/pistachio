@@ -95,21 +95,27 @@ fn main() {
                     } else if var_name == "ups.status" {
                         // Update status label gauge
                         for state in STATUSES {
-                            let gauge = status_gauge.get_metric_with_label_values(&[state]).unwrap();
-                            if var.value().contains(state) {
-                                gauge.set(1.0);
+                            if let Ok(gauge) = status_gauge.get_metric_with_label_values(&[state]) {
+                                if var.value().contains(state) {
+                                    gauge.set(1.0);
+                                } else {
+                                    gauge.set(0.0);
+                                }
                             } else {
-                                gauge.set(0.0);
+                                warn!("Failed to update {var_name} gauge for {state} state");
                             }
                         }
                     } else if var_name == "ups.beeper.status" {
                         // Update beeper status label gauge
                         for state in BEEPER_STATUSES {
-                            let gauge = beeper_status_gauge.get_metric_with_label_values(&[state]).unwrap();
-                            if var.value().contains(state) {
-                                gauge.set(1.0);
+                            if let Ok(gauge) = beeper_status_gauge.get_metric_with_label_values(&[state]) {
+                                if var.value().contains(state) {
+                                    gauge.set(1.0);
+                                } else {
+                                    gauge.set(0.0);
+                                }
                             } else {
-                                gauge.set(0.0);
+                                warn!("Failed to update {var_name} gauge for {state} state");
                             }
                         }
                     } else {
