@@ -26,19 +26,13 @@ fn main() {
     let ups_name = env::var("UPS_NAME").unwrap_or_else(|_| "ups".into());
     let ups_host = env::var("UPS_HOST").unwrap_or_else(|_| "localhost".into());
     let ups_port = env::var("UPS_PORT")
-        .ok()
-        .map(|s| s.parse::<u16>().ok())
-        .flatten()
+        .and_then(|s| s.parse::<u16>().map_err(|_| env::VarError::NotPresent))
         .unwrap_or(3493);
     let poll_rate = env::var("POLL_RATE")
-        .ok()
-        .map(|s| s.parse::<u64>().ok())
-        .flatten()
+        .and_then(|s| s.parse::<u64>().map_err(|_| env::VarError::NotPresent))
         .unwrap_or(10);
     let bind_port = env::var("BIND_PORT")
-        .ok()
-        .map(|s| s.parse::<u16>().ok())
-        .flatten()
+        .and_then(|s| s.parse::<u16>().map_err(|_| env::VarError::NotPresent))
         .unwrap_or(9120);
 
     // Log config info
