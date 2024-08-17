@@ -1,17 +1,12 @@
 use std::{env, thread, time};
 use std::convert::TryInto;
-use std::net::SocketAddr;
-use std::net::{IpAddr, Ipv4Addr};
 use std::collections::HashMap;
-
+use std::net::{SocketAddr, IpAddr, Ipv4Addr};
+use log::{debug, info, warn};
+use env_logger::{Builder, Env};
 use rups::blocking::Connection;
 use rups::ConfigBuilder;
-
-use prometheus_exporter::prometheus::register_gauge;
-use prometheus_exporter::prometheus::register_gauge_vec;
-
-use env_logger::{Builder, Env};
-use log::{debug, info, warn};
+use prometheus_exporter::prometheus::{register_gauge, register_gauge_vec};
 
 const STATUSES: &[&str] = &["OL", "OB", "LB", "RB", "CHRG", "DISCHRG", "ALARM", "OVER", "TRIM", "BOOST", "BYPASS", "OFF", "CAL", "TEST", "FSD"];
 const BEEPER_STATUSES: &[&str] = &["enabled", "disabled", "muted"];
