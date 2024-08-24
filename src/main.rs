@@ -46,7 +46,7 @@ fn main() {
 
     // Use list of available UPS variables to create a map of associated prometheus gauges
     // Gauges must be floats, so this will only create gauges for variables that are numbers
-    let gauges = create_gauges(ups_variables).expect("Could not create gauges");
+    let gauges = create_gauges(&ups_variables).expect("Could not create gauges");
 
     // Create label gauges
     let status_gauge = register_gauge_vec!("ups_status", "UPS Status Code", &["status"]).expect("Cannot create status gauge");
@@ -117,7 +117,7 @@ fn parse_config() -> (String, String, u16, u16, u64) {
     (ups_name, ups_host, ups_port, bind_port, poll_rate)
 }
 
-fn create_gauges(variables: HashMap<String, (String, String)>) -> Result<HashMap<String,GenericGauge<AtomicF64>>, prometheus_exporter::prometheus::Error> {
+fn create_gauges(variables: &HashMap<String, (String, String)>) -> Result<HashMap<String,GenericGauge<AtomicF64>>, prometheus_exporter::prometheus::Error> {
     let mut gauges = HashMap::new();
     for (raw_name, (value, description)) in variables {
         match value.parse::<f64>() {
@@ -149,5 +149,38 @@ fn update_label_gauge(label_gauge: &GenericGaugeVec<AtomicF64>, states: &[&str],
         } else {
             warn!("Failed to update label gauge for {} state", state);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use prometheus_exporter::prometheus::core::{Collector};
+
+    #[test]
+    fn gauge_creation() {
+        // Create variable map
+        let mut variables = HashMap::new();
+        variables.insert(
+            "ups.load".to_string(), ("60".to_string(), "UPS Load".to_string())
+        );
+        variables.insert(
+            "battery.charge".to_string(), ("20".to_string(), "Battery Charge".to_string()),
+        );
+        variables.insert(
+            "ups.mfr".to_string(), ("CyberPower".to_string(), "Manufacturer".to_string()),
+        );
+
+        // Test creation function
+        let gauges = create_gauges(&variables).unwrap();
+        for (name, gauge) in &gauges {
+            let gauge_desc = &gauge.desc().pop().unwrap().help;
+            let gauge_name = &gauge.desc().pop().unwrap().fq_name;
+            let (expected_name, (_, expected_desc)) = variables.get_key_value(name.as_str()).unwrap();
+            assert_eq!(name, expected_name);
+            assert_eq!(gauge_desc, expected_desc);
+            assert!(gauge_name.starts_with("ups"));
+        }
+        dbg!(gauges);
     }
 }
