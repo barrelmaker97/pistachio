@@ -6,16 +6,19 @@ use log::{debug, info, warn};
 use env_logger::{Builder, Env};
 use rups::blocking::Connection;
 use rups::ConfigBuilder;
-use prometheus_exporter::prometheus::{register_gauge, register_gauge_vec, core::GenericGauge, core::AtomicF64};
+use prometheus_exporter::prometheus::{register_gauge, register_gauge_vec};
+use prometheus_exporter::prometheus::core::{GenericGauge, GenericGaugeVec, AtomicF64};
 
-const STATUSES: &[&str] = &["OL", "OB", "LB", "RB", "CHRG", "DISCHRG", "ALARM", "OVER", "TRIM", "BOOST", "BYPASS", "OFF", "CAL", "TEST", "FSD"];
-const BEEPER_STATUSES: &[&str] = &["enabled", "disabled", "muted"];
 const BIND_ADDR: IpAddr = IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0));
 
 fn main() {
     // Initialize logging
     Builder::from_env(Env::default().default_filter_or("info")).init();
     info!("Exporter started!");
+
+    // Declare state arrays
+    let statuses: &[&str] = &["OL", "OB", "LB", "RB", "CHRG", "DISCHRG", "ALARM", "OVER", "TRIM", "BOOST", "BYPASS", "OFF", "CAL", "TEST", "FSD"];
+    let beeper_statuses: &[&str] = &["enabled", "disabled", "muted"];
 
     // Read config from the environment
     let (ups_name, ups_host, ups_port, bind_port, poll_rate) = parse_config();
@@ -60,41 +63,18 @@ fn main() {
         match conn.list_vars(&ups_name) {
             Ok(var_list) => {
                 for var in var_list {
-                    let var_name = var.name();
                     if let Ok(value) = var.value().parse::<f64>() {
                         // Update basic gauges
-                        match gauges.get(var_name.into()) {
+                        match gauges.get(var.name()) {
                             Some(gauge) => gauge.set(value),
-                            None => warn!("Gauge does not exist for variable {}", var_name)
+                            None => warn!("Gauge does not exist for variable {}", var.name())
                         }
-                    } else if var_name == "ups.status" {
-                        // Update status label gauge
-                        for state in STATUSES {
-                            if let Ok(gauge) = status_gauge.get_metric_with_label_values(&[state]) {
-                                if var.value().contains(state) {
-                                    gauge.set(1.0);
-                                } else {
-                                    gauge.set(0.0);
-                                }
-                            } else {
-                                warn!("Failed to update {var_name} gauge for {state} state");
-                            }
-                        }
-                    } else if var_name == "ups.beeper.status" {
-                        // Update beeper status label gauge
-                        for state in BEEPER_STATUSES {
-                            if let Ok(gauge) = beeper_status_gauge.get_metric_with_label_values(&[state]) {
-                                if var.value().contains(state) {
-                                    gauge.set(1.0);
-                                } else {
-                                    gauge.set(0.0);
-                                }
-                            } else {
-                                warn!("Failed to update {var_name} gauge for {state} state");
-                            }
-                        }
+                    } else if var.name() == "ups.status" {
+                        update_label_gauge(&status_gauge, statuses, var.value());
+                    } else if var.name() == "ups.beeper.status" {
+                        update_label_gauge(&beeper_status_gauge, beeper_statuses, var.value());
                     } else {
-                        debug!("Variable {var_name} does not have an associated gauge to update");
+                        debug!("Variable {} does not have an associated gauge to update", var.name());
                     }
                 }
             }
@@ -105,10 +85,10 @@ fn main() {
                 for (_, gauge) in &gauges {
                     gauge.set(0.0);
                 }
-                for state in STATUSES {
+                for state in statuses {
                     status_gauge.get_metric_with_label_values(&[state]).unwrap().set(0.0);
                 }
-                for state in BEEPER_STATUSES {
+                for state in beeper_statuses {
                     beeper_status_gauge.get_metric_with_label_values(&[state]).unwrap().set(0.0);
                 }
                 debug!("Reset gauges to zero because the UPS was unreachable")
@@ -139,7 +119,7 @@ fn parse_config() -> (String, String, u16, u16, u64) {
 
 fn create_gauges(variables: HashMap<String, (String, String)>) -> HashMap<String,GenericGauge<AtomicF64>> {
     let mut gauges = HashMap::new();
-    for (raw_name, (value, description)) in &variables {
+    for (raw_name, (value, description)) in variables {
         match value.parse::<f64>() {
             Ok(_) => {
                 let mut gauge_name = raw_name.replace(".", "_");
@@ -156,4 +136,18 @@ fn create_gauges(variables: HashMap<String, (String, String)>) -> HashMap<String
         }
     }
     gauges
+}
+
+fn update_label_gauge(label_gauge: &GenericGaugeVec<AtomicF64>, states: &[&str], value: String) {
+    for state in states {
+        if let Ok(gauge) = label_gauge.get_metric_with_label_values(&[state]) {
+            if value.contains(state) {
+                gauge.set(1.0);
+            } else {
+                gauge.set(0.0);
+            }
+        } else {
+            warn!("Failed to update label gauge for {} state", state);
+        }
+    }
 }
