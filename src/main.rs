@@ -6,7 +6,7 @@ use log::{debug, info, warn};
 use env_logger::{Builder, Env};
 use rups::blocking::Connection;
 use rups::ConfigBuilder;
-use prometheus_exporter::prometheus::{register_gauge, register_gauge_vec};
+use prometheus_exporter::prometheus::{register_gauge, register_gauge_vec, core::GenericGauge, core::AtomicF64};
 
 const STATUSES: &[&str] = &["OL", "OB", "LB", "RB", "CHRG", "DISCHRG", "ALARM", "OVER", "TRIM", "BOOST", "BYPASS", "OFF", "CAL", "TEST", "FSD"];
 const BEEPER_STATUSES: &[&str] = &["enabled", "disabled", "muted"];
@@ -38,28 +38,12 @@ fn main() {
     for var in &available_vars {
         let raw_name = var.name();
         let description = conn.get_var_description(&ups_name, &raw_name).expect("Failed to get description for a variable");
-        ups_variables.insert(raw_name, (var.value(), description));
+        ups_variables.insert(raw_name.to_string(), (var.value(), description));
     }
 
-    // Get list of available UPS variables and create a map of associated prometheus gauges
+    // Use list of available UPS variables to create a map of associated prometheus gauges
     // Gauges must be floats, so this will only create gauges for variables that are numbers
-    let mut gauges = HashMap::new();
-    for (raw_name, (value, description)) in ups_variables {
-        match value.parse::<f64>() {
-            Ok(_) => {
-                let mut gauge_name = raw_name.replace(".", "_");
-                if !gauge_name.starts_with("ups") {
-                    gauge_name.insert_str(0, "ups_");
-                }
-                let gauge = register_gauge!(gauge_name, description).expect("Could not create gauge for a variable");
-                gauges.insert(String::from(raw_name), gauge);
-                debug!("Gauge created for variable {raw_name}")
-            }
-            Err(_) => {
-                debug!("Not creating a gauge for variable {raw_name} since it is not a number")
-            }
-        }
-    }
+    let gauges = create_gauges(ups_variables);
 
     // Create label gauges
     let status_gauge = register_gauge_vec!("ups_status", "UPS Status Code", &["status"]).expect("Cannot create gauge");
@@ -151,4 +135,25 @@ fn parse_config() -> (String, String, u16, u16, u64) {
         poll_rate = 2;
     }
     (ups_name, ups_host, ups_port, bind_port, poll_rate)
+}
+
+fn create_gauges(variables: HashMap<String, (String, String)>) -> HashMap<String,GenericGauge<AtomicF64>> {
+    let mut gauges = HashMap::new();
+    for (raw_name, (value, description)) in &variables {
+        match value.parse::<f64>() {
+            Ok(_) => {
+                let mut gauge_name = raw_name.replace(".", "_");
+                if !gauge_name.starts_with("ups") {
+                    gauge_name.insert_str(0, "ups_");
+                }
+                let gauge = register_gauge!(gauge_name, description).expect("Could not create gauge for a variable");
+                gauges.insert(raw_name.to_string(), gauge);
+                debug!("Gauge created for variable {raw_name}")
+            }
+            Err(_) => {
+                debug!("Not creating a gauge for variable {raw_name} since it is not a number")
+            }
+        }
+    }
+    gauges
 }
