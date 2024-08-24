@@ -46,7 +46,7 @@ fn main() {
 
     // Use list of available UPS variables to create a map of associated prometheus gauges
     // Gauges must be floats, so this will only create gauges for variables that are numbers
-    let gauges = create_gauges(ups_variables);
+    let gauges = create_gauges(ups_variables).expect("Could not create gauges");
 
     // Create label gauges
     let status_gauge = register_gauge_vec!("ups_status", "UPS Status Code", &["status"]).expect("Cannot create status gauge");
@@ -117,7 +117,7 @@ fn parse_config() -> (String, String, u16, u16, u64) {
     (ups_name, ups_host, ups_port, bind_port, poll_rate)
 }
 
-fn create_gauges(variables: HashMap<String, (String, String)>) -> HashMap<String,GenericGauge<AtomicF64>> {
+fn create_gauges(variables: HashMap<String, (String, String)>) -> Result<HashMap<String,GenericGauge<AtomicF64>>, prometheus_exporter::prometheus::Error> {
     let mut gauges = HashMap::new();
     for (raw_name, (value, description)) in variables {
         match value.parse::<f64>() {
@@ -126,7 +126,7 @@ fn create_gauges(variables: HashMap<String, (String, String)>) -> HashMap<String
                 if !gauge_name.starts_with("ups") {
                     gauge_name.insert_str(0, "ups_");
                 }
-                let gauge = register_gauge!(gauge_name, description).expect("Could not create gauge for a variable");
+                let gauge = register_gauge!(gauge_name, description)?;
                 gauges.insert(raw_name.to_string(), gauge);
                 debug!("Gauge created for variable {raw_name}")
             }
@@ -135,7 +135,7 @@ fn create_gauges(variables: HashMap<String, (String, String)>) -> HashMap<String
             }
         }
     }
-    gauges
+    Ok(gauges)
 }
 
 fn update_label_gauge(label_gauge: &GenericGaugeVec<AtomicF64>, states: &[&str], value: String) {
