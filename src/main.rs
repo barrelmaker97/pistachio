@@ -49,8 +49,8 @@ fn main() {
     let gauges = create_gauges(ups_variables);
 
     // Create label gauges
-    let status_gauge = register_gauge_vec!("ups_status", "UPS Status Code", &["status"]).expect("Cannot create gauge");
-    let beeper_status_gauge = register_gauge_vec!("ups_beeper_status", "Beeper Status", &["status"]).expect("Cannot create gauge");
+    let status_gauge = register_gauge_vec!("ups_status", "UPS Status Code", &["status"]).expect("Cannot create status gauge");
+    let beeper_status_gauge = register_gauge_vec!("ups_beeper_status", "Beeper Status", &["status"]).expect("Cannot create beeper status gauge");
     info!("{} basic gauges and 2 labeled gauges will be exported", gauges.len());
 
     // Start prometheus exporter
