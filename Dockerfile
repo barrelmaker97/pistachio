@@ -9,9 +9,9 @@ RUN cargo build --release
 COPY ./src src
 RUN touch src/main.rs
 RUN cargo build --release
-RUN strip target/release/nut-exporter
+RUN strip target/release/pistachio
 
 FROM debian:bookworm-slim
 WORKDIR /app
-COPY --from=builder /app/target/release/nut-exporter .
-CMD ["./nut-exporter"]
+COPY --from=builder /app/target/release/pistachio .
+CMD ["./pistachio"]
