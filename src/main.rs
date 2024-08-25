@@ -1,13 +1,14 @@
-use std::{env, thread, time};
-use std::convert::TryInto;
-use std::collections::HashMap;
-use std::net::{SocketAddr, IpAddr, Ipv4Addr};
-use log::{debug, info, warn};
 use env_logger::{Builder, Env};
+use log::{debug, info, warn};
+use prometheus_exporter::prometheus;
+use prometheus_exporter::prometheus::core::{AtomicF64, GenericGauge, GenericGaugeVec};
+use prometheus_exporter::prometheus::{register_gauge, register_gauge_vec};
 use rups::blocking::Connection;
 use rups::ConfigBuilder;
-use prometheus_exporter::prometheus::{register_gauge, register_gauge_vec};
-use prometheus_exporter::prometheus::core::{GenericGauge, GenericGaugeVec, AtomicF64};
+use std::collections::HashMap;
+use std::convert::TryInto;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::{env, thread, time};
 
 const BIND_ADDR: IpAddr = IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0));
 
@@ -16,7 +17,7 @@ fn main() {
     Builder::from_env(Env::default().default_filter_or("info")).init();
     info!("Exporter started!");
 
-    // Declare state arrays
+    // Declare state arrays for UPS status and beeper status
     let statuses: &[&str] = &["OL", "OB", "LB", "RB", "CHRG", "DISCHRG", "ALARM", "OVER", "TRIM", "BOOST", "BYPASS", "OFF", "CAL", "TEST", "FSD"];
     let beeper_statuses: &[&str] = &["enabled", "disabled", "muted"];
 
@@ -36,21 +37,27 @@ fn main() {
     let mut conn = Connection::new(&config).expect("Failed to connect to the UPS");
 
     // Get list of available UPS variables and map them to a tuple of their values and descriptions
-    let available_vars = conn.list_vars(&ups_name).expect("Failed to get available variables from the UPS");
-    let mut ups_variables = HashMap::new();
+    let available_vars = conn
+        .list_vars(&ups_name)
+        .expect("Failed to get available variables from the UPS");
+    let mut ups_vars = HashMap::new();
     for var in &available_vars {
         let raw_name = var.name();
-        let description = conn.get_var_description(&ups_name, &raw_name).expect("Failed to get description for a variable");
-        ups_variables.insert(raw_name.to_string(), (var.value(), description));
+        let description = conn
+            .get_var_description(&ups_name, &raw_name)
+            .expect("Failed to get description for a variable");
+        ups_vars.insert(raw_name.to_string(), (var.value(), description));
     }
 
-    // Use list of available UPS variables to create a map of associated prometheus gauges
+    // Use map of available UPS variables to create a map of associated prometheus gauges
     // Gauges must be floats, so this will only create gauges for variables that are numbers
-    let gauges = create_gauges(&ups_variables).expect("Could not create gauges");
+    let gauges = create_gauges(&ups_vars).expect("Could not create gauges");
 
     // Create label gauges
-    let status_gauge = register_gauge_vec!("ups_status", "UPS Status Code", &["status"]).expect("Cannot create status gauge");
-    let beeper_status_gauge = register_gauge_vec!("ups_beeper_status", "Beeper Status", &["status"]).expect("Cannot create beeper status gauge");
+    let status_gauge = register_gauge_vec!("ups_status", "UPS Status Code", &["status"])
+        .expect("Cannot create status gauge");
+    let beeper_gauge = register_gauge_vec!("beeper_status", "Beeper Status", &["status"])
+        .expect("Cannot create beeper status gauge");
     info!("{} basic gauges and 2 labeled gauges will be exported", gauges.len());
 
     // Start prometheus exporter
@@ -67,12 +74,12 @@ fn main() {
                         // Update basic gauges
                         match gauges.get(var.name()) {
                             Some(gauge) => gauge.set(value),
-                            None => warn!("Gauge does not exist for variable {}", var.name())
+                            None => warn!("Gauge does not exist for variable {}", var.name()),
                         }
                     } else if var.name() == "ups.status" {
                         update_label_gauge(&status_gauge, statuses, var.value());
                     } else if var.name() == "ups.beeper.status" {
-                        update_label_gauge(&beeper_status_gauge, beeper_statuses, var.value());
+                        update_label_gauge(&beeper_gauge, beeper_statuses, var.value());
                     } else {
                         debug!("Variable {} does not have an associated gauge to update", var.name());
                     }
@@ -86,10 +93,16 @@ fn main() {
                     gauge.set(0.0);
                 }
                 for state in statuses {
-                    status_gauge.get_metric_with_label_values(&[state]).unwrap().set(0.0);
+                    status_gauge
+                        .get_metric_with_label_values(&[state])
+                        .unwrap()
+                        .set(0.0);
                 }
                 for state in beeper_statuses {
-                    beeper_status_gauge.get_metric_with_label_values(&[state]).unwrap().set(0.0);
+                    beeper_gauge
+                        .get_metric_with_label_values(&[state])
+                        .unwrap()
+                        .set(0.0);
                 }
                 debug!("Reset gauges to zero because the UPS was unreachable")
             }
@@ -117,9 +130,9 @@ fn parse_config() -> (String, String, u16, u16, u64) {
     (ups_name, ups_host, ups_port, bind_port, poll_rate)
 }
 
-fn create_gauges(variables: &HashMap<String, (String, String)>) -> Result<HashMap<String,GenericGauge<AtomicF64>>, prometheus_exporter::prometheus::Error> {
+fn create_gauges(vars: &HashMap<String, (String, String)>) -> Result<HashMap<String,GenericGauge<AtomicF64>>, prometheus::Error> {
     let mut gauges = HashMap::new();
-    for (raw_name, (value, description)) in variables {
+    for (raw_name, (value, description)) in vars {
         match value.parse::<f64>() {
             Ok(_) => {
                 let mut gauge_name = raw_name.replace(".", "_");
@@ -155,23 +168,27 @@ fn update_label_gauge(label_gauge: &GenericGaugeVec<AtomicF64>, states: &[&str],
 #[cfg(test)]
 mod tests {
     use super::*;
-    use prometheus_exporter::prometheus::core::{Collector};
+    use prometheus_exporter::prometheus::core::Collector;
 
     #[test]
     fn create_gauges_multiple() {
         // Create variable map
         let mut variables = HashMap::new();
         variables.insert(
-            "ups.var1".to_string(), ("20".to_string(), "Variable1".to_string()),
+            "ups.var1".to_string(),
+            ("20".to_string(), "Variable1".to_string()),
         );
         variables.insert(
-            "ups.var2".to_string(), ("20".to_string(), "Variable2".to_string()),
+            "ups.var2".to_string(),
+            ("20".to_string(), "Variable2".to_string()),
         );
         variables.insert(
-            "ups.var3".to_string(), ("20".to_string(), "Variable3".to_string()),
+            "ups.var3".to_string(),
+            ("20".to_string(), "Variable3".to_string()),
         );
         variables.insert(
-            "ups.var4".to_string(), ("20".to_string(), "Variable4".to_string()),
+            "ups.var4".to_string(),
+            ("20".to_string(), "Variable4".to_string()),
         );
 
         // Test creation function
@@ -180,7 +197,8 @@ mod tests {
         for (name, gauge) in &gauges {
             let gauge_desc = &gauge.desc().pop().unwrap().help;
             let gauge_name = &gauge.desc().pop().unwrap().fq_name;
-            let (expected_name, (_, expected_desc)) = variables.get_key_value(name.as_str()).unwrap();
+            let (expected_name, (_, expected_desc)) =
+                variables.get_key_value(name.as_str()).unwrap();
             assert_eq!(name, expected_name);
             assert_eq!(gauge_desc, expected_desc);
             assert!(gauge_name.starts_with("ups"));
@@ -194,7 +212,8 @@ mod tests {
         // Create variable map
         let mut variables = HashMap::new();
         variables.insert(
-            "battery.charge".to_string(), ("20".to_string(), "Battery Charge".to_string()),
+            "battery.charge".to_string(),
+            ("20".to_string(), "Battery Charge".to_string()),
         );
 
         // Test creation function
@@ -203,7 +222,8 @@ mod tests {
         for (name, gauge) in &gauges {
             let gauge_desc = &gauge.desc().pop().unwrap().help;
             let gauge_name = &gauge.desc().pop().unwrap().fq_name;
-            let (expected_name, (_, expected_desc)) = variables.get_key_value(name.as_str()).unwrap();
+            let (expected_name, (_, expected_desc)) =
+                variables.get_key_value(name.as_str()).unwrap();
             assert_eq!(name, expected_name);
             assert_eq!(gauge_desc, expected_desc);
             assert!(gauge_name.starts_with("ups"));
@@ -217,7 +237,8 @@ mod tests {
         // Create variable map
         let mut variables = HashMap::new();
         variables.insert(
-            "ups.mfr".to_string(), ("CyberPower".to_string(), "Manufacturer".to_string()),
+            "ups.mfr".to_string(),
+            ("CyberPower".to_string(), "Manufacturer".to_string()),
         );
 
         // Test creation function
