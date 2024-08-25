@@ -158,21 +158,25 @@ mod tests {
     use prometheus_exporter::prometheus::core::{Collector};
 
     #[test]
-    fn gauge_creation() {
+    fn create_gauges_multiple() {
         // Create variable map
         let mut variables = HashMap::new();
         variables.insert(
-            "ups.load".to_string(), ("60".to_string(), "UPS Load".to_string())
+            "ups.var1".to_string(), ("20".to_string(), "Variable1".to_string()),
         );
         variables.insert(
-            "battery.charge".to_string(), ("20".to_string(), "Battery Charge".to_string()),
+            "ups.var2".to_string(), ("20".to_string(), "Variable2".to_string()),
         );
         variables.insert(
-            "ups.mfr".to_string(), ("CyberPower".to_string(), "Manufacturer".to_string()),
+            "ups.var3".to_string(), ("20".to_string(), "Variable3".to_string()),
+        );
+        variables.insert(
+            "ups.var4".to_string(), ("20".to_string(), "Variable4".to_string()),
         );
 
         // Test creation function
         let gauges = create_gauges(&variables).unwrap();
+        assert_eq!(gauges.len(), variables.len());
         for (name, gauge) in &gauges {
             let gauge_desc = &gauge.desc().pop().unwrap().help;
             let gauge_name = &gauge.desc().pop().unwrap().fq_name;
@@ -180,7 +184,45 @@ mod tests {
             assert_eq!(name, expected_name);
             assert_eq!(gauge_desc, expected_desc);
             assert!(gauge_name.starts_with("ups"));
+            assert!(!gauge_name.contains("."));
         }
+        dbg!(gauges);
+    }
+
+    #[test]
+    fn create_gauges_no_ups() {
+        // Create variable map
+        let mut variables = HashMap::new();
+        variables.insert(
+            "battery.charge".to_string(), ("20".to_string(), "Battery Charge".to_string()),
+        );
+
+        // Test creation function
+        let gauges = create_gauges(&variables).unwrap();
+        assert_eq!(gauges.len(), variables.len());
+        for (name, gauge) in &gauges {
+            let gauge_desc = &gauge.desc().pop().unwrap().help;
+            let gauge_name = &gauge.desc().pop().unwrap().fq_name;
+            let (expected_name, (_, expected_desc)) = variables.get_key_value(name.as_str()).unwrap();
+            assert_eq!(name, expected_name);
+            assert_eq!(gauge_desc, expected_desc);
+            assert!(gauge_name.starts_with("ups"));
+            assert!(!gauge_name.contains("."));
+        }
+        dbg!(gauges);
+    }
+
+    #[test]
+    fn create_gauges_skip_non_float() {
+        // Create variable map
+        let mut variables = HashMap::new();
+        variables.insert(
+            "ups.mfr".to_string(), ("CyberPower".to_string(), "Manufacturer".to_string()),
+        );
+
+        // Test creation function
+        let gauges = create_gauges(&variables).unwrap();
+        assert_eq!(gauges.len(), 0);
         dbg!(gauges);
     }
 }
