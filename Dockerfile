@@ -11,7 +11,7 @@ RUN touch src/main.rs
 RUN cargo build --release
 RUN strip target/release/pistachio
 
-FROM debian:bookworm-slim
+FROM debian:12.6-slim
 WORKDIR /app
 COPY --from=builder /app/target/release/pistachio .
 CMD ["./pistachio"]
