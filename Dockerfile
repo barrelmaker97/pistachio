@@ -1,12 +1,17 @@
-FROM rust:1.80-slim AS build
+FROM rust:1.80-slim AS builder
 
-COPY ./Cargo.lock /tmp/Cargo.lock
-COPY ./Cargo.toml /tmp/Cargo.toml
-COPY ./src /tmp/src
-WORKDIR /tmp
+WORKDIR /app
 
+COPY ./Cargo.toml .
+RUN mkdir src && echo "fn main() {}" > src/main.rs
 RUN cargo build --release
 
+COPY ./src src
+RUN touch src/main.rs
+RUN cargo build --release
+RUN strip target/release/nut-exporter
+
 FROM debian:bookworm-slim
-COPY --from=build /tmp/target/release/nut-exporter .
+WORKDIR /app
+COPY --from=builder /app/target/release/nut-exporter .
 CMD ["./nut-exporter"]
