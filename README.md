@@ -42,7 +42,7 @@ docker run -d \
   -e UPS_NAME=your_ups_name \
   -e UPS_HOST=your_nut_server_host \
   -e UPS_PORT=3493 \
-  -e LOG_LEVEL=info \
+  -e RUST_LOG=info \
   -e POLL_RATE=10 \
   ghcr.io/barrelmaker97/pistachio:latest
 ```
@@ -63,7 +63,7 @@ services:
       UPS_NAME: your_ups_name
       UPS_HOST: your_nut_server_host
       UPS_PORT: 3493
-      LOG_LEVEL: info
+      RUST_LOG: info
       POLL_RATE: 10
     ports:
       - "9120:9120"
