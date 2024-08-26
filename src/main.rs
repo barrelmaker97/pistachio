@@ -72,9 +72,10 @@ fn main() {
                 for var in var_list {
                     if let Ok(value) = var.value().parse::<f64>() {
                         // Update basic gauges
-                        match gauges.get(var.name()) {
-                            Some(gauge) => gauge.set(value),
-                            None => warn!("Gauge does not exist for variable {}", var.name()),
+                        if let Some(gauge) = gauges.get(var.name()) {
+                            gauge.set(value);
+                        } else {
+                            warn!("Gauge does not exist for variable {}", var.name());
                         }
                     } else if var.name() == "ups.status" {
                         update_label_gauge(&status_gauge, statuses, &var.value());
@@ -104,7 +105,7 @@ fn main() {
                         .unwrap()
                         .set(0.0);
                 }
-                debug!("Reset gauges to zero because the UPS was unreachable")
+                debug!("Reset gauges to zero because the UPS was unreachable");
             }
         }
         thread::sleep(time::Duration::from_secs(poll_rate));
@@ -135,16 +136,16 @@ fn create_gauges(vars: &HashMap<String, (String, String)>) -> Result<HashMap<Str
     for (raw_name, (value, description)) in vars {
         match value.parse::<f64>() {
             Ok(_) => {
-                let mut gauge_name = raw_name.replace(".", "_");
+                let mut gauge_name = raw_name.replace('.', "_");
                 if !gauge_name.starts_with("ups") {
                     gauge_name.insert_str(0, "ups_");
                 }
                 let gauge = register_gauge!(gauge_name, description)?;
                 gauges.insert(raw_name.to_string(), gauge);
-                debug!("Gauge created for variable {raw_name}")
+                debug!("Gauge created for variable {raw_name}");
             }
             Err(_) => {
-                debug!("Not creating a gauge for variable {raw_name} since it is not a number")
+                debug!("Not creating a gauge for variable {raw_name} since it is not a number");
             }
         }
     }
