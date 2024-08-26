@@ -77,9 +77,9 @@ fn main() {
                             None => warn!("Gauge does not exist for variable {}", var.name()),
                         }
                     } else if var.name() == "ups.status" {
-                        update_label_gauge(&status_gauge, statuses, var.value());
+                        update_label_gauge(&status_gauge, statuses, &var.value());
                     } else if var.name() == "ups.beeper.status" {
-                        update_label_gauge(&beeper_gauge, beeper_statuses, var.value());
+                        update_label_gauge(&beeper_gauge, beeper_statuses, &var.value());
                     } else {
                         debug!("Variable {} does not have an associated gauge to update", var.name());
                     }
@@ -151,7 +151,7 @@ fn create_gauges(vars: &HashMap<String, (String, String)>) -> Result<HashMap<Str
     Ok(gauges)
 }
 
-fn update_label_gauge(label_gauge: &GenericGaugeVec<AtomicF64>, states: &[&str], value: String) {
+fn update_label_gauge(label_gauge: &GenericGaugeVec<AtomicF64>, states: &[&str], value: &String) {
     for state in states {
         if let Ok(gauge) = label_gauge.get_metric_with_label_values(&[state]) {
             if value.contains(state) {
