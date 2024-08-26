@@ -44,7 +44,7 @@ fn main() {
     for var in &available_vars {
         let raw_name = var.name();
         let description = conn
-            .get_var_description(&ups_name, &raw_name)
+            .get_var_description(&ups_name, raw_name)
             .expect("Failed to get description for a variable");
         ups_vars.insert(raw_name.to_string(), (var.value(), description));
     }
@@ -89,7 +89,7 @@ fn main() {
                 // Log warning and set gauges to 0 to indicate failure
                 warn!("Failed to connect to the UPS");
                 debug!("Err: {err}");
-                for (_, gauge) in &gauges {
+                for gauge in gauges.values() {
                     gauge.set(0.0);
                 }
                 for state in statuses {
@@ -151,7 +151,7 @@ fn create_gauges(vars: &HashMap<String, (String, String)>) -> Result<HashMap<Str
     Ok(gauges)
 }
 
-fn update_label_gauge(label_gauge: &GenericGaugeVec<AtomicF64>, states: &[&str], value: &String) {
+fn update_label_gauge(label_gauge: &GenericGaugeVec<AtomicF64>, states: &[&str], value: &str) {
     for state in states {
         if let Ok(gauge) = label_gauge.get_metric_with_label_values(&[state]) {
             if value.contains(state) {
