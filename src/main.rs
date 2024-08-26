@@ -44,7 +44,7 @@ fn main() {
     for var in &available_vars {
         let raw_name = var.name();
         let description = conn
-            .get_var_description(&ups_name, &raw_name)
+            .get_var_description(&ups_name, raw_name)
             .expect("Failed to get description for a variable");
         ups_vars.insert(raw_name.to_string(), (var.value(), description));
     }
@@ -72,14 +72,15 @@ fn main() {
                 for var in var_list {
                     if let Ok(value) = var.value().parse::<f64>() {
                         // Update basic gauges
-                        match gauges.get(var.name()) {
-                            Some(gauge) => gauge.set(value),
-                            None => warn!("Gauge does not exist for variable {}", var.name()),
+                        if let Some(gauge) = gauges.get(var.name()) {
+                            gauge.set(value);
+                        } else {
+                            warn!("Gauge does not exist for variable {}", var.name());
                         }
                     } else if var.name() == "ups.status" {
-                        update_label_gauge(&status_gauge, statuses, var.value());
+                        update_label_gauge(&status_gauge, statuses, &var.value());
                     } else if var.name() == "ups.beeper.status" {
-                        update_label_gauge(&beeper_gauge, beeper_statuses, var.value());
+                        update_label_gauge(&beeper_gauge, beeper_statuses, &var.value());
                     } else {
                         debug!("Variable {} does not have an associated gauge to update", var.name());
                     }
@@ -89,7 +90,7 @@ fn main() {
                 // Log warning and set gauges to 0 to indicate failure
                 warn!("Failed to connect to the UPS");
                 debug!("Err: {err}");
-                for (_, gauge) in &gauges {
+                for gauge in gauges.values() {
                     gauge.set(0.0);
                 }
                 for state in statuses {
@@ -104,7 +105,7 @@ fn main() {
                         .unwrap()
                         .set(0.0);
                 }
-                debug!("Reset gauges to zero because the UPS was unreachable")
+                debug!("Reset gauges to zero because the UPS was unreachable");
             }
         }
         thread::sleep(time::Duration::from_secs(poll_rate));
@@ -135,23 +136,23 @@ fn create_gauges(vars: &HashMap<String, (String, String)>) -> Result<HashMap<Str
     for (raw_name, (value, description)) in vars {
         match value.parse::<f64>() {
             Ok(_) => {
-                let mut gauge_name = raw_name.replace(".", "_");
+                let mut gauge_name = raw_name.replace('.', "_");
                 if !gauge_name.starts_with("ups") {
                     gauge_name.insert_str(0, "ups_");
                 }
                 let gauge = register_gauge!(gauge_name, description)?;
                 gauges.insert(raw_name.to_string(), gauge);
-                debug!("Gauge created for variable {raw_name}")
+                debug!("Gauge created for variable {raw_name}");
             }
             Err(_) => {
-                debug!("Not creating a gauge for variable {raw_name} since it is not a number")
+                debug!("Not creating a gauge for variable {raw_name} since it is not a number");
             }
         }
     }
     Ok(gauges)
 }
 
-fn update_label_gauge(label_gauge: &GenericGaugeVec<AtomicF64>, states: &[&str], value: String) {
+fn update_label_gauge(label_gauge: &GenericGaugeVec<AtomicF64>, states: &[&str], value: &str) {
     for state in states {
         if let Ok(gauge) = label_gauge.get_metric_with_label_values(&[state]) {
             if value.contains(state) {
