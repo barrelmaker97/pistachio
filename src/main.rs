@@ -3,10 +3,7 @@ use log::{debug, info, warn, error};
 use prometheus_exporter::prometheus::{register_gauge_vec};
 use rups::blocking::Connection;
 use std::collections::HashMap;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::{time, thread, process};
-
-const BIND_ADDR: IpAddr = IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0));
 
 fn main() {
     // Initialize logging
@@ -24,9 +21,10 @@ fn main() {
     });
 
     // Log config info
-    info!("UPS to be checked: {}@{}:{}", config.ups_name, config.ups_host, config.ups_port);
+    info!("UPS to be checked: {}", config.ups_fullname());
     info!("Poll Rate: Every {} seconds", config.poll_rate);
 
+    // Create connection to UPS
     let mut conn = Connection::new(&config.rups_config).expect("Failed to connect to the UPS");
 
     // Get list of available UPS variables and map them to a tuple of their values and descriptions
@@ -54,8 +52,7 @@ fn main() {
     info!("{} basic gauges and 2 labeled gauges will be exported", gauges.len());
 
     // Start prometheus exporter
-    let addr = SocketAddr::new(BIND_ADDR, config.bind_port);
-    prometheus_exporter::start(addr).expect("Failed to start prometheus exporter");
+    prometheus_exporter::start(config.bind_addr).expect("Failed to start prometheus exporter");
 
     // Main loop that polls for variables and updates associated gauges
     loop {

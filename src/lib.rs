@@ -4,12 +4,15 @@ use prometheus_exporter::prometheus::{register_gauge};
 use prometheus_exporter::prometheus;
 use std::collections::HashMap;
 use std::{env, time};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+
+const BIND_IP: IpAddr = IpAddr::V4(Ipv4Addr::UNSPECIFIED);
 
 pub struct Config {
     pub ups_name: String,
-    pub ups_host: String,
-    pub ups_port: u16,
-    pub bind_port: u16,
+    ups_host: String,
+    ups_port: u16,
+    pub bind_addr: SocketAddr,
     pub poll_rate: u64,
     pub rups_config: rups::Config,
 }
@@ -31,20 +34,25 @@ impl Config {
             warn!("POLL_RATE is too low, increasing to minimum of 2 seconds");
             poll_rate = 2;
         }
-        // Create connection to UPS
         let rups_config = rups::ConfigBuilder::new()
             .with_host((ups_host.clone(), ups_port).try_into().unwrap_or_default())
             .with_debug(false) // Turn this on for debugging network chatter
             .with_timeout(time::Duration::from_secs(poll_rate - 1))
             .build();
+        let bind_addr = SocketAddr::new(BIND_IP, bind_port);
+
         Ok(Config {
             ups_name,
             ups_host,
             ups_port,
-            bind_port,
+            bind_addr,
             poll_rate,
             rups_config,
         })
+    }
+
+    pub fn ups_fullname(&self) -> String {
+        format!("{}@{}:{}", self.ups_name, self.ups_host, self.ups_port)
     }
 }
 
