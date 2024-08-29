@@ -2,6 +2,7 @@ use env_logger::{Builder, Env};
 use log::{debug, info, warn, error};
 use prometheus_exporter::prometheus::{register_gauge_vec};
 use rups::blocking::Connection;
+use std::collections::HashMap;
 use std::{time, thread, process};
 
 fn main() {
@@ -40,11 +41,14 @@ fn main() {
     });
 
     // Create label gauges
+    let mut label_gauges = HashMap::new();
     let status_gauge = register_gauge_vec!("ups_status", "UPS Status Code", &["status"])
         .expect("Cannot create status gauge");
-    let beeper_gauge = register_gauge_vec!("beeper_status", "Beeper Status", &["status"])
+    label_gauges.insert("ups.status", (status_gauge, statuses));
+    let beeper_gauge = register_gauge_vec!("ups_beeper_status", "Beeper Status", &["status"])
         .expect("Cannot create beeper status gauge");
-    info!("{} basic gauges and 2 labeled gauges will be exported", basic_gauges.len());
+    label_gauges.insert("ups.beeper.status", (beeper_gauge, beeper_statuses));
+    info!("{} basic gauges and {} labeled gauges will be exported", basic_gauges.len(), label_gauges.len());
 
     // Start prometheus exporter
     prometheus_exporter::start(*config.bind_addr()).expect("Failed to start prometheus exporter");
@@ -62,10 +66,8 @@ fn main() {
                         } else {
                             warn!("Gauge does not exist for variable {}", var.name());
                         }
-                    } else if var.name() == "ups.status" {
-                        pistachio::update_label_gauge(&status_gauge, statuses, &var.value());
-                    } else if var.name() == "ups.beeper.status" {
-                        pistachio::update_label_gauge(&beeper_gauge, beeper_statuses, &var.value());
+                    } else if let Some((label_gauge, states)) = label_gauges.get(var.name()) {
+                        pistachio::update_label_gauge(&label_gauge, states, &var.value());
                     } else {
                         debug!("Variable {} does not have an associated gauge to update", var.name());
                     }
@@ -78,17 +80,13 @@ fn main() {
                 for gauge in basic_gauges.values() {
                     gauge.set(0.0);
                 }
-                for state in statuses {
-                    status_gauge
-                        .get_metric_with_label_values(&[state])
-                        .unwrap()
-                        .set(0.0);
-                }
-                for state in beeper_statuses {
-                    beeper_gauge
-                        .get_metric_with_label_values(&[state])
-                        .unwrap()
-                        .set(0.0);
+                for (label_gauge, states) in label_gauges.values() {
+                    for state in *states {
+                        label_gauge
+                            .get_metric_with_label_values(&[state])
+                            .unwrap()
+                            .set(0.0);
+                    }
                 }
                 debug!("Reset gauges to zero because the UPS was unreachable");
             }
