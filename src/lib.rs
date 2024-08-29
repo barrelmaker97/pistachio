@@ -73,19 +73,15 @@ impl Config {
     }
 }
 
-pub fn get_available_vars(conn: &mut Connection, config: &Config) -> HashMap<String, (String, String)> {
-    let available_vars = conn
-        .list_vars(config.ups_name())
-        .expect("Failed to get available variables from the UPS");
+pub fn get_available_vars(conn: &mut Connection, ups_name: &str) -> Result<HashMap<String, (String, String)>, rups::ClientError> {
+    let available_vars = conn.list_vars(ups_name)?;
     let mut ups_vars = HashMap::new();
     for var in &available_vars {
         let raw_name = var.name();
-        let description = conn
-            .get_var_description(config.ups_name(), raw_name)
-            .expect("Failed to get description for a variable");
+        let description = conn.get_var_description(ups_name, raw_name)?;
         ups_vars.insert(raw_name.to_string(), (var.value(), description));
     }
-    ups_vars
+    Ok(ups_vars)
 }
 
 pub fn create_basic_gauges(vars: &HashMap<String, (String, String)>) -> Result<HashMap<String,GenericGauge<AtomicF64>>, prometheus::Error> {

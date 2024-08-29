@@ -30,18 +30,24 @@ fn main() {
     prometheus_exporter::start(*config.bind_addr()).expect("Failed to start prometheus exporter");
 
     // Get list of available UPS variables and map them to a tuple of their values and descriptions
-    let ups_vars = pistachio::get_available_vars(&mut conn, &config);
+    let ups_vars = pistachio::get_available_vars(&mut conn, config.ups_name()).unwrap_or_else(|err| {
+        error!("Could not get available variables from the UPS: {err}");
+        process::exit(1);
+    });
 
     // Use map of available UPS variables to create a map of associated prometheus gauges
     // Gauges must be floats, so this will only create gauges for variables that are numbers
-    let gauges = pistachio::create_basic_gauges(&ups_vars).expect("Could not create gauges");
+    let basic_gauges = pistachio::create_basic_gauges(&ups_vars).unwrap_or_else(|err| {
+        error!("Could not create basic gauges: {err}");
+        process::exit(1)
+    });
 
     // Create label gauges
     let status_gauge = register_gauge_vec!("ups_status", "UPS Status Code", &["status"])
         .expect("Cannot create status gauge");
     let beeper_gauge = register_gauge_vec!("beeper_status", "Beeper Status", &["status"])
         .expect("Cannot create beeper status gauge");
-    info!("{} basic gauges and 2 labeled gauges will be exported", gauges.len());
+    info!("{} basic gauges and 2 labeled gauges will be exported", basic_gauges.len());
 
     // Main loop that polls for variables and updates associated gauges
     loop {
@@ -51,7 +57,7 @@ fn main() {
                 for var in var_list {
                     if let Ok(value) = var.value().parse::<f64>() {
                         // Update basic gauges
-                        if let Some(gauge) = gauges.get(var.name()) {
+                        if let Some(gauge) = basic_gauges.get(var.name()) {
                             gauge.set(value);
                         } else {
                             warn!("Gauge does not exist for variable {}", var.name());
@@ -69,7 +75,7 @@ fn main() {
                 // Log warning and set gauges to 0 to indicate failure
                 warn!("Failed to connect to the UPS");
                 debug!("Err: {err}");
-                for gauge in gauges.values() {
+                for gauge in basic_gauges.values() {
                     gauge.set(0.0);
                 }
                 for state in statuses {
