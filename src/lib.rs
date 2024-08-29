@@ -5,6 +5,7 @@ use prometheus_exporter::prometheus;
 use std::collections::HashMap;
 use std::{env, time};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use rups::blocking::Connection;
 
 const BIND_IP: IpAddr = IpAddr::V4(Ipv4Addr::UNSPECIFIED);
 
@@ -72,7 +73,22 @@ impl Config {
     }
 }
 
-pub fn create_gauges(vars: &HashMap<String, (String, String)>) -> Result<HashMap<String,GenericGauge<AtomicF64>>, prometheus::Error> {
+pub fn get_available_vars(conn: &mut Connection, config: &Config) -> HashMap<String, (String, String)> {
+    let available_vars = conn
+        .list_vars(config.ups_name())
+        .expect("Failed to get available variables from the UPS");
+    let mut ups_vars = HashMap::new();
+    for var in &available_vars {
+        let raw_name = var.name();
+        let description = conn
+            .get_var_description(config.ups_name(), raw_name)
+            .expect("Failed to get description for a variable");
+        ups_vars.insert(raw_name.to_string(), (var.value(), description));
+    }
+    ups_vars
+}
+
+pub fn create_basic_gauges(vars: &HashMap<String, (String, String)>) -> Result<HashMap<String,GenericGauge<AtomicF64>>, prometheus::Error> {
     let mut gauges = HashMap::new();
     for (raw_name, (value, description)) in vars {
         match value.parse::<f64>() {
@@ -113,7 +129,7 @@ mod tests {
     use prometheus_exporter::prometheus::core::Collector;
 
     #[test]
-    fn create_gauges_multiple() {
+    fn create_basic_gauges_multiple() {
         // Create variable map
         let mut variables = HashMap::new();
         variables.insert(
@@ -134,7 +150,7 @@ mod tests {
         );
 
         // Test creation function
-        let gauges = create_gauges(&variables).unwrap();
+        let gauges = create_basic_gauges(&variables).unwrap();
         assert_eq!(gauges.len(), variables.len());
         for (name, gauge) in &gauges {
             let gauge_desc = &gauge.desc().pop().unwrap().help;
@@ -150,7 +166,7 @@ mod tests {
     }
 
     #[test]
-    fn create_gauges_no_ups() {
+    fn create_basic_gauges_no_ups() {
         // Create variable map
         let mut variables = HashMap::new();
         variables.insert(
@@ -159,7 +175,7 @@ mod tests {
         );
 
         // Test creation function
-        let gauges = create_gauges(&variables).unwrap();
+        let gauges = create_basic_gauges(&variables).unwrap();
         assert_eq!(gauges.len(), variables.len());
         for (name, gauge) in &gauges {
             let gauge_desc = &gauge.desc().pop().unwrap().help;
@@ -175,7 +191,7 @@ mod tests {
     }
 
     #[test]
-    fn create_gauges_skip_non_float() {
+    fn create_basic_gauges_skip_non_float() {
         // Create variable map
         let mut variables = HashMap::new();
         variables.insert(
@@ -184,7 +200,7 @@ mod tests {
         );
 
         // Test creation function
-        let gauges = create_gauges(&variables).unwrap();
+        let gauges = create_basic_gauges(&variables).unwrap();
         assert_eq!(gauges.len(), 0);
         dbg!(gauges);
     }

@@ -2,7 +2,6 @@ use env_logger::{Builder, Env};
 use log::{debug, info, warn, error};
 use prometheus_exporter::prometheus::{register_gauge_vec};
 use rups::blocking::Connection;
-use std::collections::HashMap;
 use std::{time, thread, process};
 
 fn main() {
@@ -31,21 +30,11 @@ fn main() {
     prometheus_exporter::start(*config.bind_addr()).expect("Failed to start prometheus exporter");
 
     // Get list of available UPS variables and map them to a tuple of their values and descriptions
-    let available_vars = conn
-        .list_vars(config.ups_name())
-        .expect("Failed to get available variables from the UPS");
-    let mut ups_vars = HashMap::new();
-    for var in &available_vars {
-        let raw_name = var.name();
-        let description = conn
-            .get_var_description(config.ups_name(), raw_name)
-            .expect("Failed to get description for a variable");
-        ups_vars.insert(raw_name.to_string(), (var.value(), description));
-    }
+    let ups_vars = pistachio::get_available_vars(&mut conn, &config);
 
     // Use map of available UPS variables to create a map of associated prometheus gauges
     // Gauges must be floats, so this will only create gauges for variables that are numbers
-    let gauges = pistachio::create_gauges(&ups_vars).expect("Could not create gauges");
+    let gauges = pistachio::create_basic_gauges(&ups_vars).expect("Could not create gauges");
 
     // Create label gauges
     let status_gauge = register_gauge_vec!("ups_status", "UPS Status Code", &["status"])
