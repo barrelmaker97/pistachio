@@ -28,7 +28,7 @@ fn main() {
     let mut conn = Connection::new(config.rups_config()).expect("Failed to connect to the UPS");
 
     // Start prometheus exporter
-    prometheus_exporter::start(config.bind_addr()).expect("Failed to start prometheus exporter");
+    prometheus_exporter::start(*config.bind_addr()).expect("Failed to start prometheus exporter");
 
     // Get list of available UPS variables and map them to a tuple of their values and descriptions
     let available_vars = conn
@@ -98,6 +98,6 @@ fn main() {
                 debug!("Reset gauges to zero because the UPS was unreachable");
             }
         }
-        thread::sleep(time::Duration::from_secs(config.poll_rate()));
+        thread::sleep(time::Duration::from_secs(*config.poll_rate()));
     }
 }

@@ -63,12 +63,12 @@ impl Config {
         &self.rups_config
     }
 
-    pub fn poll_rate(&self) -> u64 {
-        self.poll_rate
+    pub fn poll_rate(&self) -> &u64 {
+        &self.poll_rate
     }
 
-    pub fn bind_addr(&self) -> SocketAddr {
-        self.bind_addr
+    pub fn bind_addr(&self) -> &SocketAddr {
+        &self.bind_addr
     }
 }
 
