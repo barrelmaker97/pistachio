@@ -3,7 +3,7 @@ use prometheus_exporter::prometheus::core::{AtomicF64, GenericGauge, GenericGaug
 use prometheus_exporter::prometheus::{register_gauge};
 use prometheus_exporter::prometheus;
 use std::collections::HashMap;
-use std::env;
+use std::{env, time};
 
 pub struct Config {
     pub ups_name: String,
@@ -11,6 +11,7 @@ pub struct Config {
     pub ups_port: u16,
     pub bind_port: u16,
     pub poll_rate: u64,
+    pub rups_config: rups::Config,
 }
 
 impl Config {
@@ -30,12 +31,19 @@ impl Config {
             warn!("POLL_RATE is too low, increasing to minimum of 2 seconds");
             poll_rate = 2;
         }
+        // Create connection to UPS
+        let rups_config = rups::ConfigBuilder::new()
+            .with_host((ups_host.clone(), ups_port).try_into().unwrap_or_default())
+            .with_debug(false) // Turn this on for debugging network chatter
+            .with_timeout(time::Duration::from_secs(poll_rate - 1))
+            .build();
         Ok(Config {
             ups_name,
             ups_host,
             ups_port,
             bind_port,
-            poll_rate
+            poll_rate,
+            rups_config,
         })
     }
 }

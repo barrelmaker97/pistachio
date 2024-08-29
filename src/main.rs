@@ -1,10 +1,8 @@
 use env_logger::{Builder, Env};
 use log::{debug, info, warn, error};
 use prometheus_exporter::prometheus::{register_gauge_vec};
-use rups::ConfigBuilder;
 use rups::blocking::Connection;
 use std::collections::HashMap;
-use std::convert::TryInto;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::{time, thread, process};
 
@@ -21,7 +19,7 @@ fn main() {
 
     // Read config from the environment
     let config = pistachio::Config::build().unwrap_or_else(|err| {
-        error!("Could not load configuration");
+        error!("Could not load configuration: {err}");
         process::exit(1);
     });
 
@@ -29,13 +27,7 @@ fn main() {
     info!("UPS to be checked: {}@{}:{}", config.ups_name, config.ups_host, config.ups_port);
     info!("Poll Rate: Every {} seconds", config.poll_rate);
 
-    // Create connection to UPS
-    let rups_config = ConfigBuilder::new()
-        .with_host((config.ups_host, config.ups_port).try_into().unwrap_or_default())
-        .with_debug(false) // Turn this on for debugging network chatter
-        .with_timeout(time::Duration::from_secs(config.poll_rate - 1))
-        .build();
-    let mut conn = Connection::new(&rups_config).expect("Failed to connect to the UPS");
+    let mut conn = Connection::new(&config.rups_config).expect("Failed to connect to the UPS");
 
     // Get list of available UPS variables and map them to a tuple of their values and descriptions
     let available_vars = conn
