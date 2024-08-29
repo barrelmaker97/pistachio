@@ -26,9 +26,6 @@ fn main() {
     // Create connection to UPS
     let mut conn = Connection::new(config.rups_config()).expect("Failed to connect to the UPS");
 
-    // Start prometheus exporter
-    prometheus_exporter::start(*config.bind_addr()).expect("Failed to start prometheus exporter");
-
     // Get list of available UPS variables and map them to a tuple of their values and descriptions
     let ups_vars = pistachio::get_available_vars(&mut conn, config.ups_name()).unwrap_or_else(|err| {
         error!("Could not get available variables from the UPS: {err}");
@@ -48,6 +45,9 @@ fn main() {
     let beeper_gauge = register_gauge_vec!("beeper_status", "Beeper Status", &["status"])
         .expect("Cannot create beeper status gauge");
     info!("{} basic gauges and 2 labeled gauges will be exported", basic_gauges.len());
+
+    // Start prometheus exporter
+    prometheus_exporter::start(*config.bind_addr()).expect("Failed to start prometheus exporter");
 
     // Main loop that polls for variables and updates associated gauges
     loop {
