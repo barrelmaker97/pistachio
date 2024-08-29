@@ -1,11 +1,11 @@
 use log::{debug, warn};
-use prometheus_exporter::prometheus::core::{AtomicF64, GenericGauge, GenericGaugeVec};
-use prometheus_exporter::prometheus::{register_gauge};
 use prometheus_exporter::prometheus;
-use std::collections::HashMap;
-use std::{env, time};
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use prometheus_exporter::prometheus::core::{AtomicF64, GenericGauge, GenericGaugeVec};
+use prometheus_exporter::prometheus::register_gauge;
 use rups::blocking::Connection;
+use std::collections::HashMap;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::{env, time};
 
 const BIND_IP: IpAddr = IpAddr::V4(Ipv4Addr::UNSPECIFIED);
 
