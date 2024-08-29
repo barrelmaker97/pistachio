@@ -1,12 +1,12 @@
 use env_logger::{Builder, Env};
-use log::{debug, info, warn};
+use log::{debug, info, warn, error};
 use prometheus_exporter::prometheus::{register_gauge_vec};
 use rups::ConfigBuilder;
 use rups::blocking::Connection;
 use std::collections::HashMap;
 use std::convert::TryInto;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::{time, thread};
+use std::{time, thread, process};
 
 const BIND_ADDR: IpAddr = IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0));
 
@@ -20,29 +20,32 @@ fn main() {
     let beeper_statuses: &[&str] = &["enabled", "disabled", "muted"];
 
     // Read config from the environment
-    let (ups_name, ups_host, ups_port, bind_port, poll_rate) = pistachio::parse_config();
+    let config = pistachio::Config::build().unwrap_or_else(|err| {
+        error!("Could not load configuration");
+        process::exit(1);
+    });
 
     // Log config info
-    info!("UPS to be checked: {ups_name}@{ups_host}:{ups_port}");
-    info!("Poll Rate: Every {poll_rate} seconds");
+    info!("UPS to be checked: {}@{}:{}", config.ups_name, config.ups_host, config.ups_port);
+    info!("Poll Rate: Every {} seconds", config.poll_rate);
 
     // Create connection to UPS
-    let config = ConfigBuilder::new()
-        .with_host((ups_host, ups_port).try_into().unwrap_or_default())
+    let rups_config = ConfigBuilder::new()
+        .with_host((config.ups_host, config.ups_port).try_into().unwrap_or_default())
         .with_debug(false) // Turn this on for debugging network chatter
-        .with_timeout(time::Duration::from_secs(poll_rate - 1))
+        .with_timeout(time::Duration::from_secs(config.poll_rate - 1))
         .build();
-    let mut conn = Connection::new(&config).expect("Failed to connect to the UPS");
+    let mut conn = Connection::new(&rups_config).expect("Failed to connect to the UPS");
 
     // Get list of available UPS variables and map them to a tuple of their values and descriptions
     let available_vars = conn
-        .list_vars(&ups_name)
+        .list_vars(&config.ups_name)
         .expect("Failed to get available variables from the UPS");
     let mut ups_vars = HashMap::new();
     for var in &available_vars {
         let raw_name = var.name();
         let description = conn
-            .get_var_description(&ups_name, raw_name)
+            .get_var_description(&config.ups_name, raw_name)
             .expect("Failed to get description for a variable");
         ups_vars.insert(raw_name.to_string(), (var.value(), description));
     }
@@ -59,13 +62,13 @@ fn main() {
     info!("{} basic gauges and 2 labeled gauges will be exported", gauges.len());
 
     // Start prometheus exporter
-    let addr = SocketAddr::new(BIND_ADDR, bind_port);
+    let addr = SocketAddr::new(BIND_ADDR, config.bind_port);
     prometheus_exporter::start(addr).expect("Failed to start prometheus exporter");
 
     // Main loop that polls for variables and updates associated gauges
     loop {
         debug!("Polling UPS...");
-        match conn.list_vars(&ups_name) {
+        match conn.list_vars(&config.ups_name) {
             Ok(var_list) => {
                 for var in var_list {
                     if let Ok(value) = var.value().parse::<f64>() {
@@ -106,6 +109,6 @@ fn main() {
                 debug!("Reset gauges to zero because the UPS was unreachable");
             }
         }
-        thread::sleep(time::Duration::from_secs(poll_rate));
+        thread::sleep(time::Duration::from_secs(config.poll_rate));
     }
 }

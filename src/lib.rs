@@ -5,23 +5,39 @@ use prometheus_exporter::prometheus;
 use std::collections::HashMap;
 use std::env;
 
-pub fn parse_config() -> (String, String, u16, u16, u64) {
-    let ups_name = env::var("UPS_NAME").unwrap_or_else(|_| "ups".into());
-    let ups_host = env::var("UPS_HOST").unwrap_or_else(|_| "localhost".into());
-    let ups_port = env::var("UPS_PORT")
-        .and_then(|s| s.parse::<u16>().map_err(|_| env::VarError::NotPresent))
-        .unwrap_or(3493);
-    let bind_port = env::var("BIND_PORT")
-        .and_then(|s| s.parse::<u16>().map_err(|_| env::VarError::NotPresent))
-        .unwrap_or(9120);
-    let mut poll_rate = env::var("POLL_RATE")
-        .and_then(|s| s.parse::<u64>().map_err(|_| env::VarError::NotPresent))
-        .unwrap_or(10);
-    if poll_rate < 2 {
-        warn!("POLL_RATE is too low, increasing to minimum of 2 seconds");
-        poll_rate = 2;
+pub struct Config {
+    pub ups_name: String,
+    pub ups_host: String,
+    pub ups_port: u16,
+    pub bind_port: u16,
+    pub poll_rate: u64,
+}
+
+impl Config {
+    pub fn build() -> Result<Config, &'static str> {
+        let ups_name = env::var("UPS_NAME").unwrap_or_else(|_| "ups".into());
+        let ups_host = env::var("UPS_HOST").unwrap_or_else(|_| "localhost".into());
+        let ups_port = env::var("UPS_PORT")
+            .and_then(|s| s.parse::<u16>().map_err(|_| env::VarError::NotPresent))
+            .unwrap_or(3493);
+        let bind_port = env::var("BIND_PORT")
+            .and_then(|s| s.parse::<u16>().map_err(|_| env::VarError::NotPresent))
+            .unwrap_or(9120);
+        let mut poll_rate = env::var("POLL_RATE")
+            .and_then(|s| s.parse::<u64>().map_err(|_| env::VarError::NotPresent))
+            .unwrap_or(10);
+        if poll_rate < 2 {
+            warn!("POLL_RATE is too low, increasing to minimum of 2 seconds");
+            poll_rate = 2;
+        }
+        Ok(Config {
+            ups_name,
+            ups_host,
+            ups_port,
+            bind_port,
+            poll_rate
+        })
     }
-    (ups_name, ups_host, ups_port, bind_port, poll_rate)
 }
 
 pub fn create_gauges(vars: &HashMap<String, (String, String)>) -> Result<HashMap<String,GenericGauge<AtomicF64>>, prometheus::Error> {
