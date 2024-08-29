@@ -22,20 +22,23 @@ fn main() {
 
     // Log config info
     info!("UPS to be checked: {}", config.ups_fullname());
-    info!("Poll Rate: Every {} seconds", config.poll_rate);
+    info!("Poll Rate: Every {} seconds", config.poll_rate());
 
     // Create connection to UPS
-    let mut conn = Connection::new(&config.rups_config).expect("Failed to connect to the UPS");
+    let mut conn = Connection::new(config.rups_config()).expect("Failed to connect to the UPS");
+
+    // Start prometheus exporter
+    prometheus_exporter::start(config.bind_addr()).expect("Failed to start prometheus exporter");
 
     // Get list of available UPS variables and map them to a tuple of their values and descriptions
     let available_vars = conn
-        .list_vars(&config.ups_name)
+        .list_vars(config.ups_name())
         .expect("Failed to get available variables from the UPS");
     let mut ups_vars = HashMap::new();
     for var in &available_vars {
         let raw_name = var.name();
         let description = conn
-            .get_var_description(&config.ups_name, raw_name)
+            .get_var_description(config.ups_name(), raw_name)
             .expect("Failed to get description for a variable");
         ups_vars.insert(raw_name.to_string(), (var.value(), description));
     }
@@ -51,13 +54,10 @@ fn main() {
         .expect("Cannot create beeper status gauge");
     info!("{} basic gauges and 2 labeled gauges will be exported", gauges.len());
 
-    // Start prometheus exporter
-    prometheus_exporter::start(config.bind_addr).expect("Failed to start prometheus exporter");
-
     // Main loop that polls for variables and updates associated gauges
     loop {
         debug!("Polling UPS...");
-        match conn.list_vars(&config.ups_name) {
+        match conn.list_vars(config.ups_name()) {
             Ok(var_list) => {
                 for var in var_list {
                     if let Ok(value) = var.value().parse::<f64>() {
@@ -98,6 +98,6 @@ fn main() {
                 debug!("Reset gauges to zero because the UPS was unreachable");
             }
         }
-        thread::sleep(time::Duration::from_secs(config.poll_rate));
+        thread::sleep(time::Duration::from_secs(config.poll_rate()));
     }
 }

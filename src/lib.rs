@@ -9,12 +9,12 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 const BIND_IP: IpAddr = IpAddr::V4(Ipv4Addr::UNSPECIFIED);
 
 pub struct Config {
-    pub ups_name: String,
+    ups_name: String,
     ups_host: String,
     ups_port: u16,
-    pub bind_addr: SocketAddr,
-    pub poll_rate: u64,
-    pub rups_config: rups::Config,
+    bind_addr: SocketAddr,
+    poll_rate: u64,
+    rups_config: rups::Config,
 }
 
 impl Config {
@@ -53,6 +53,22 @@ impl Config {
 
     pub fn ups_fullname(&self) -> String {
         format!("{}@{}:{}", self.ups_name, self.ups_host, self.ups_port)
+    }
+
+    pub fn ups_name(&self) -> &str {
+        self.ups_name.as_str()
+    }
+
+    pub fn rups_config(&self) -> &rups::Config {
+        &self.rups_config
+    }
+
+    pub fn poll_rate(&self) -> u64 {
+        self.poll_rate
+    }
+
+    pub fn bind_addr(&self) -> SocketAddr {
+        self.bind_addr
     }
 }
 
