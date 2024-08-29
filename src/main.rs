@@ -59,12 +59,12 @@ fn main() {
         match conn.list_vars(config.ups_name()) {
             Ok(var_list) => {
                 for var in var_list {
-                    if let Ok(value) = var.value().parse::<f64>() {
+                    if let Some(gauge) = basic_gauges.get(var.name()) {
                         // Update basic gauges
-                        if let Some(gauge) = basic_gauges.get(var.name()) {
+                        if let Ok(value) = var.value().parse::<f64>() {
                             gauge.set(value);
                         } else {
-                            warn!("Gauge does not exist for variable {}", var.name());
+                            warn!("Value of variable {} is not a float", var.name());
                         }
                     } else if let Some((label_gauge, states)) = label_gauges.get(var.name()) {
                         pistachio::update_label_gauge(&label_gauge, states, &var.value());
