@@ -1,13 +1,15 @@
 use log::{debug, warn};
 use prometheus_exporter::prometheus;
 use prometheus_exporter::prometheus::core::{AtomicF64, GenericGauge, GenericGaugeVec};
-use prometheus_exporter::prometheus::register_gauge;
+use prometheus_exporter::prometheus::{register_gauge, register_gauge_vec};
 use rups::blocking::Connection;
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::{env, time};
 
 const BIND_IP: IpAddr = IpAddr::V4(Ipv4Addr::UNSPECIFIED);
+const STATUSES: &[&str] = &["OL", "OB", "LB", "RB", "CHRG", "DISCHRG", "ALARM", "OVER", "TRIM", "BOOST", "BYPASS", "OFF", "CAL", "TEST", "FSD"];
+const BEEPER_STATUSES: &[&str] = &["enabled", "disabled", "muted"];
 
 pub struct Config {
     ups_name: String,
@@ -103,6 +105,15 @@ pub fn create_basic_gauges(vars: &HashMap<String, (String, String)>) -> Result<H
         }
     }
     Ok(gauges)
+}
+
+pub fn create_label_gauges() -> Result<HashMap<String,(GenericGaugeVec<AtomicF64>, &'static [&'static str])>, prometheus::Error> {
+    let mut label_gauges = HashMap::new();
+    let status_gauge = register_gauge_vec!("ups_status", "UPS Status Code", &["status"])?;
+    let beeper_gauge = register_gauge_vec!("ups_beeper_status", "Beeper Status", &["status"])?;
+    label_gauges.insert(String::from("ups.status"), (status_gauge, STATUSES));
+    label_gauges.insert(String::from("ups.beeper.status"), (beeper_gauge, BEEPER_STATUSES));
+    Ok(label_gauges)
 }
 
 pub fn update_label_gauge(label_gauge: &GenericGaugeVec<AtomicF64>, states: &[&str], value: &str) {

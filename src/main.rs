@@ -1,18 +1,12 @@
 use env_logger::{Builder, Env};
 use log::{debug, info, warn, error};
-use prometheus_exporter::prometheus::{register_gauge_vec};
 use rups::blocking::Connection;
-use std::collections::HashMap;
 use std::{time, thread, process};
 
 fn main() {
     // Initialize logging
     Builder::from_env(Env::default().default_filter_or("info")).init();
     info!("Exporter started!");
-
-    // Declare state arrays for UPS status and beeper status
-    let statuses: &[&str] = &["OL", "OB", "LB", "RB", "CHRG", "DISCHRG", "ALARM", "OVER", "TRIM", "BOOST", "BYPASS", "OFF", "CAL", "TEST", "FSD"];
-    let beeper_statuses: &[&str] = &["enabled", "disabled", "muted"];
 
     // Read config from the environment
     let config = pistachio::Config::build().unwrap_or_else(|err| {
@@ -41,13 +35,11 @@ fn main() {
     });
 
     // Create label gauges
-    let mut label_gauges = HashMap::new();
-    let status_gauge = register_gauge_vec!("ups_status", "UPS Status Code", &["status"])
-        .expect("Cannot create status gauge");
-    label_gauges.insert("ups.status", (status_gauge, statuses));
-    let beeper_gauge = register_gauge_vec!("ups_beeper_status", "Beeper Status", &["status"])
-        .expect("Cannot create beeper status gauge");
-    label_gauges.insert("ups.beeper.status", (beeper_gauge, beeper_statuses));
+    let label_gauges = pistachio::create_label_gauges().unwrap_or_else(|err| {
+        error!("Could not create label gauges: {err}");
+        process::exit(1)
+    });
+
     info!("{} basic gauges and {} labeled gauges will be exported", basic_gauges.len(), label_gauges.len());
 
     // Start prometheus exporter
