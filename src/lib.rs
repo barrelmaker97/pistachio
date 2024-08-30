@@ -4,6 +4,7 @@ use prometheus_exporter::prometheus::core::{AtomicF64, GenericGauge, GenericGaug
 use prometheus_exporter::prometheus::{register_gauge, register_gauge_vec};
 use rups::blocking::Connection;
 use std::collections::HashMap;
+use std::error::Error;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::{env, time};
 
@@ -72,6 +73,24 @@ impl Config {
 
     pub fn bind_addr(&self) -> &SocketAddr {
         &self.bind_addr
+    }
+}
+
+pub struct Metrics {
+    pub basic_gauges: HashMap<String,GenericGauge<AtomicF64>>,
+    pub label_gauges: HashMap<String,(GenericGaugeVec<AtomicF64>, &'static [&'static str])>,
+}
+
+impl Metrics {
+    pub fn build(conn: &mut Connection, config: &Config) -> Result<Metrics, Box<dyn Error>> {
+        let ups_vars = get_available_vars(conn, config.ups_name())?;
+        let basic_gauges = create_basic_gauges(&ups_vars)?;
+        let label_gauges = create_label_gauges()?;
+
+        Ok(Metrics {
+            basic_gauges,
+            label_gauges,
+        })
     }
 }
 

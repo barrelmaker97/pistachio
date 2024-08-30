@@ -21,26 +21,12 @@ fn main() {
     // Create connection to UPS
     let mut conn = Connection::new(config.rups_config()).expect("Failed to connect to the UPS");
 
-    // Get list of available UPS variables and map them to a tuple of their values and descriptions
-    let ups_vars = pistachio::get_available_vars(&mut conn, config.ups_name()).unwrap_or_else(|err| {
-        error!("Could not get available variables from the UPS: {err}");
+    let metrics = pistachio::Metrics::build(&mut conn, &config).unwrap_or_else(|err| {
+        error!("Could not create prometheus gauges from UPS variables: {err}");
         process::exit(1);
     });
 
-    // Use map of available UPS variables to create a map of associated prometheus gauges
-    // Gauges must be floats, so this will only create gauges for variables that are numbers
-    let basic_gauges = pistachio::create_basic_gauges(&ups_vars).unwrap_or_else(|err| {
-        error!("Could not create basic gauges: {err}");
-        process::exit(1)
-    });
-
-    // Create label gauges
-    let label_gauges = pistachio::create_label_gauges().unwrap_or_else(|err| {
-        error!("Could not create label gauges: {err}");
-        process::exit(1)
-    });
-
-    info!("{} basic gauges and {} labeled gauges will be exported", basic_gauges.len(), label_gauges.len());
+    info!("{} basic gauges and {} labeled gauges will be exported", metrics.basic_gauges.len(), metrics.label_gauges.len());
 
     // Start prometheus exporter
     prometheus_exporter::start(*config.bind_addr()).expect("Failed to start prometheus exporter");
@@ -51,14 +37,14 @@ fn main() {
         match conn.list_vars(config.ups_name()) {
             Ok(var_list) => {
                 for var in var_list {
-                    if let Some(gauge) = basic_gauges.get(var.name()) {
+                    if let Some(gauge) = metrics.basic_gauges.get(var.name()) {
                         // Update basic gauges
                         if let Ok(value) = var.value().parse::<f64>() {
                             gauge.set(value);
                         } else {
                             warn!("Value of variable {} is not a float", var.name());
                         }
-                    } else if let Some((label_gauge, states)) = label_gauges.get(var.name()) {
+                    } else if let Some((label_gauge, states)) = metrics.label_gauges.get(var.name()) {
                         pistachio::update_label_gauge(&label_gauge, states, &var.value());
                     } else {
                         debug!("Variable {} does not have an associated gauge to update", var.name());
@@ -69,10 +55,10 @@ fn main() {
                 // Log warning and set gauges to 0 to indicate failure
                 warn!("Failed to connect to the UPS");
                 debug!("Err: {err}");
-                for gauge in basic_gauges.values() {
+                for gauge in metrics.basic_gauges.values() {
                     gauge.set(0.0);
                 }
-                for (label_gauge, states) in label_gauges.values() {
+                for (label_gauge, states) in metrics.label_gauges.values() {
                     for state in *states {
                         label_gauge
                             .get_metric_with_label_values(&[state])
