@@ -41,8 +41,7 @@ fn main() {
             }
             Err(err) => {
                 // Log warning and set gauges to 0 to indicate failure
-                warn!("Failed to connect to the UPS");
-                debug!("Err: {err}");
+                warn!("Failed to connect to the UPS: {err}");
                 metrics.reset();
                 debug!("Reset gauges to zero because the UPS was unreachable");
             }

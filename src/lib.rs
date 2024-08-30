@@ -107,7 +107,7 @@ impl Metrics {
                     warn!("Value of variable {} is not a float", var.name());
                 }
             } else if let Some((label_gauge, states)) = self.label_gauges.get(var.name()) {
-                update_label_gauge(&label_gauge, states, &var.value());
+                update_label_gauge(label_gauge, states, &var.value());
             } else {
                 debug!("Variable {} does not have an associated gauge to update", var.name());
             }
