@@ -37,22 +37,13 @@ fn main() {
         match conn.list_vars(config.ups_name()) {
             Ok(var_list) => {
                 metrics.update(&var_list);
+                debug!("Metrics updated");
             }
             Err(err) => {
                 // Log warning and set gauges to 0 to indicate failure
                 warn!("Failed to connect to the UPS");
                 debug!("Err: {err}");
-                for gauge in metrics.basic_gauges.values() {
-                    gauge.set(0.0);
-                }
-                for (label_gauge, states) in metrics.label_gauges.values() {
-                    for state in *states {
-                        label_gauge
-                            .get_metric_with_label_values(&[state])
-                            .unwrap()
-                            .set(0.0);
-                    }
-                }
+                metrics.reset();
                 debug!("Reset gauges to zero because the UPS was unreachable");
             }
         }

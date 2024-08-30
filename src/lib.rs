@@ -77,8 +77,8 @@ impl Config {
 }
 
 pub struct Metrics {
-    pub basic_gauges: HashMap<String,GenericGauge<AtomicF64>>,
-    pub label_gauges: HashMap<String,(GenericGaugeVec<AtomicF64>, &'static [&'static str])>,
+    basic_gauges: HashMap<String,GenericGauge<AtomicF64>>,
+    label_gauges: HashMap<String,(GenericGaugeVec<AtomicF64>, &'static [&'static str])>,
 }
 
 impl Metrics {
@@ -110,6 +110,20 @@ impl Metrics {
                 update_label_gauge(&label_gauge, states, &var.value());
             } else {
                 debug!("Variable {} does not have an associated gauge to update", var.name());
+            }
+        }
+    }
+
+    pub fn reset(&self) {
+        for gauge in self.basic_gauges.values() {
+            gauge.set(0.0);
+        }
+        for (label_gauge, states) in self.label_gauges.values() {
+            for state in *states {
+                label_gauge
+                    .get_metric_with_label_values(&[state])
+                    .unwrap()
+                    .set(0.0);
             }
         }
     }
