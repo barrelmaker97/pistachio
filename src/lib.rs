@@ -264,4 +264,13 @@ mod tests {
         assert_eq!(gauges.len(), 0);
         dbg!(gauges);
     }
+
+    #[test]
+    fn create_config() {
+        let config = Config::build().unwrap();
+        assert_eq!(config.ups_fullname(), String::from("ups@localhost:3493"));
+        assert_eq!(config.ups_name(), "ups");
+        assert_eq!(*config.poll_rate(), 10);
+        assert_eq!(*config.bind_addr(), SocketAddr::new(BIND_IP, 9120));
+    }
 }
