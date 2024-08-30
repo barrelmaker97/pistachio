@@ -27,7 +27,7 @@ fn main() {
         process::exit(1);
     });
 
-    let metrics = pistachio::Metrics::build(ups_vars).unwrap_or_else(|err| {
+    let metrics = pistachio::Metrics::build(&ups_vars).unwrap_or_else(|err| {
         error!("Could not create prometheus gauges from UPS variables: {err}");
         process::exit(1);
     });

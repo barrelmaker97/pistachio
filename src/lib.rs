@@ -84,8 +84,8 @@ pub struct Metrics {
 }
 
 impl Metrics {
-    pub fn build(ups_vars: HashMap<String, (String, String)>) -> Result<Metrics, Box<dyn Error>> {
-        let basic_gauges = create_basic_gauges(&ups_vars)?;
+    pub fn build(ups_vars: &HashMap<String, (String, String)>) -> Result<Metrics, Box<dyn Error>> {
+        let basic_gauges = create_basic_gauges(ups_vars)?;
         let label_gauges = create_label_gauges()?;
 
         Ok(Metrics {
