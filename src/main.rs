@@ -26,7 +26,7 @@ fn main() {
         process::exit(1);
     });
 
-    info!("{} basic gauges and {} labeled gauges will be exported", metrics.basic_gauges.len(), metrics.label_gauges.len());
+    info!("{} gauges will be exported", metrics.count());
 
     // Start prometheus exporter
     prometheus_exporter::start(*config.bind_addr()).expect("Failed to start prometheus exporter");

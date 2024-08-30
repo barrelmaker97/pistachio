@@ -92,6 +92,10 @@ impl Metrics {
             label_gauges,
         })
     }
+
+    pub fn count(&self) -> usize {
+        self.basic_gauges.len() + self.label_gauges.len()
+    }
 }
 
 pub fn get_available_vars(conn: &mut Connection, ups_name: &str) -> Result<HashMap<String, (String, String)>, rups::ClientError> {
