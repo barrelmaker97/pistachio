@@ -114,18 +114,17 @@ impl Metrics {
         }
     }
 
-    pub fn reset(&self) {
+    pub fn reset(&self) -> Result<(), Box<dyn Error>> {
         for gauge in self.basic_gauges.values() {
             gauge.set(0.0);
         }
         for (label_gauge, states) in self.label_gauges.values() {
             for state in *states {
-                label_gauge
-                    .get_metric_with_label_values(&[state])
-                    .unwrap()
-                    .set(0.0);
+                let gauge = label_gauge .get_metric_with_label_values(&[state])?;
+                gauge.set(0.0);
             }
         }
+        Ok(())
     }
 }
 
