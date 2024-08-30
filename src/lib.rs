@@ -82,8 +82,7 @@ pub struct Metrics {
 }
 
 impl Metrics {
-    pub fn build(conn: &mut Connection, config: &Config) -> Result<Metrics, Box<dyn Error>> {
-        let ups_vars = get_available_vars(conn, config.ups_name())?;
+    pub fn build(ups_vars: HashMap<String, (String, String)>) -> Result<Metrics, Box<dyn Error>> {
         let basic_gauges = create_basic_gauges(&ups_vars)?;
         let label_gauges = create_label_gauges()?;
 

@@ -21,7 +21,13 @@ fn main() {
     // Create connection to UPS
     let mut conn = Connection::new(config.rups_config()).expect("Failed to connect to the UPS");
 
-    let metrics = pistachio::Metrics::build(&mut conn, &config).unwrap_or_else(|err| {
+    // Get list of available UPS vars
+    let ups_vars = pistachio::get_available_vars(&mut conn, config.ups_name()).unwrap_or_else(|err| {
+        error!("Could not get list of available variables from the UPS: {err}");
+        process::exit(1);
+    });
+
+    let metrics = pistachio::Metrics::build(ups_vars).unwrap_or_else(|err| {
         error!("Could not create prometheus gauges from UPS variables: {err}");
         process::exit(1);
     });
