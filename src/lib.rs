@@ -287,7 +287,7 @@ mod tests {
         );
 
         // Create metrics instance
-        let metrics = Metrics::build(variables).unwrap();
+        let metrics = Metrics::build(&variables).unwrap();
         assert_eq!(3, metrics.count()); // Will have 3 since 2 label gauges are always created
 
         // Update metrics
