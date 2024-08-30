@@ -96,6 +96,23 @@ impl Metrics {
     pub fn count(&self) -> usize {
         self.basic_gauges.len() + self.label_gauges.len()
     }
+
+    pub fn update(&self, var_list: &Vec<rups::Variable>) {
+        for var in var_list {
+            if let Some(gauge) = self.basic_gauges.get(var.name()) {
+                // Update basic gauges
+                if let Ok(value) = var.value().parse::<f64>() {
+                    gauge.set(value);
+                } else {
+                    warn!("Value of variable {} is not a float", var.name());
+                }
+            } else if let Some((label_gauge, states)) = self.label_gauges.get(var.name()) {
+                update_label_gauge(&label_gauge, states, &var.value());
+            } else {
+                debug!("Variable {} does not have an associated gauge to update", var.name());
+            }
+        }
+    }
 }
 
 pub fn get_available_vars(conn: &mut Connection, ups_name: &str) -> Result<HashMap<String, (String, String)>, rups::ClientError> {

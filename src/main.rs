@@ -36,20 +36,7 @@ fn main() {
         debug!("Polling UPS...");
         match conn.list_vars(config.ups_name()) {
             Ok(var_list) => {
-                for var in var_list {
-                    if let Some(gauge) = metrics.basic_gauges.get(var.name()) {
-                        // Update basic gauges
-                        if let Ok(value) = var.value().parse::<f64>() {
-                            gauge.set(value);
-                        } else {
-                            warn!("Value of variable {} is not a float", var.name());
-                        }
-                    } else if let Some((label_gauge, states)) = metrics.label_gauges.get(var.name()) {
-                        pistachio::update_label_gauge(&label_gauge, states, &var.value());
-                    } else {
-                        debug!("Variable {} does not have an associated gauge to update", var.name());
-                    }
-                }
+                metrics.update(&var_list);
             }
             Err(err) => {
                 // Log warning and set gauges to 0 to indicate failure
