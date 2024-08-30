@@ -12,6 +12,7 @@ const BIND_IP: IpAddr = IpAddr::V4(Ipv4Addr::UNSPECIFIED);
 const STATUSES: &[&str] = &["OL", "OB", "LB", "RB", "CHRG", "DISCHRG", "ALARM", "OVER", "TRIM", "BOOST", "BYPASS", "OFF", "CAL", "TEST", "FSD"];
 const BEEPER_STATUSES: &[&str] = &["enabled", "disabled", "muted"];
 
+#[derive(Debug)]
 pub struct Config {
     ups_name: String,
     ups_host: String,
@@ -76,6 +77,7 @@ impl Config {
     }
 }
 
+#[derive(Debug)]
 pub struct Metrics {
     basic_gauges: HashMap<String,GenericGauge<AtomicF64>>,
     label_gauges: HashMap<String,(GenericGaugeVec<AtomicF64>, &'static [&'static str])>,
@@ -119,7 +121,7 @@ impl Metrics {
         }
         for (label_gauge, states) in self.label_gauges.values() {
             for state in *states {
-                let gauge = label_gauge .get_metric_with_label_values(&[state])?;
+                let gauge = label_gauge.get_metric_with_label_values(&[state])?;
                 gauge.set(0.0);
             }
         }
@@ -267,9 +269,64 @@ mod tests {
     #[test]
     fn create_config() {
         let config = Config::build().unwrap();
+        dbg!(&config);
         assert_eq!(config.ups_fullname(), String::from("ups@localhost:3493"));
         assert_eq!(config.ups_name(), "ups");
         assert_eq!(*config.poll_rate(), 10);
         assert_eq!(*config.bind_addr(), SocketAddr::new(BIND_IP, 9120));
+    }
+
+    #[test]
+    fn create_metrics() {
+        // Setup
+        let registry = prometheus::default_registry();
+        let mut variables = HashMap::new();
+        variables.insert(
+            "ups.var5".to_string(),
+            ("20".to_string(), "Variable5".to_string()),
+        );
+
+        // Create metrics instance
+        let metrics = Metrics::build(variables).unwrap();
+        assert_eq!(3, metrics.count()); // Will have 3 since 2 label gauges are always created
+
+        // Update metrics
+        let basic_var: rups::Variable = rups::Variable::parse("ups.var5", String::from("30"));
+        let label_var: rups::Variable = rups::Variable::parse("ups.status", String::from("OL"));
+        let var_list = vec![basic_var, label_var];
+        metrics.update(&var_list);
+
+        // Check updated metric values
+        for metric_family in registry.gather() {
+            if metric_family.get_name() == "ups_var5" {
+                let gauge = metric_family.get_metric()[0].get_gauge();
+                dbg!(gauge);
+                assert_eq!(30.0, gauge.get_value());
+            } else if metric_family.get_name() == "ups_status" {
+                for metric in metric_family.get_metric() {
+                    if metric.get_label()[0].get_value() == "OL" {
+                        assert_eq!(1.0, metric.get_gauge().get_value());
+                    } else {
+                        assert_eq!(0.0, metric.get_gauge().get_value());
+                    }
+                }
+            }
+        }
+
+        // Reset metrics
+        metrics.reset().unwrap();
+
+        // Check reset metric values
+        for metric_family in registry.gather() {
+            if metric_family.get_name() == "ups_var5" {
+                let gauge = metric_family.get_metric()[0].get_gauge();
+                dbg!(gauge);
+                assert_eq!(0.0, gauge.get_value());
+            } else if metric_family.get_name() == "ups_status" {
+                for metric in metric_family.get_metric() {
+                    assert_eq!(0.0, metric.get_gauge().get_value());
+                }
+            }
+        }
     }
 }
