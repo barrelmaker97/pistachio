@@ -1,12 +1,13 @@
 use log::{debug, warn};
-use prometheus_exporter::prometheus;
 use prometheus_exporter::prometheus::core::{AtomicF64, GenericGauge, GenericGaugeVec};
 use prometheus_exporter::prometheus::{register_gauge, register_gauge_vec};
+use prometheus_exporter::prometheus;
 use rups::blocking::Connection;
 use std::collections::HashMap;
+use std::env;
 use std::error::Error;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::{env, time};
+use std::time::Duration;
 
 const BIND_IP: IpAddr = IpAddr::V4(Ipv4Addr::UNSPECIFIED);
 const STATUSES: &[&str] = &["OL", "OB", "LB", "RB", "CHRG", "DISCHRG", "ALARM", "OVER", "TRIM", "BOOST", "BYPASS", "OFF", "CAL", "TEST", "FSD"];
@@ -42,7 +43,7 @@ impl Config {
         let rups_config = rups::ConfigBuilder::new()
             .with_host((ups_host.clone(), ups_port).try_into().unwrap_or_default())
             .with_debug(false) // Turn this on for debugging network chatter
-            .with_timeout(time::Duration::from_secs(poll_rate - 1))
+            .with_timeout(Duration::from_secs(poll_rate - 1))
             .build();
         let bind_addr = SocketAddr::new(BIND_IP, bind_port);
 
