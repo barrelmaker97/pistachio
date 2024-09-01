@@ -142,7 +142,7 @@ pub fn get_available_vars(conn: &mut Connection, ups_name: &str) -> Result<HashM
 
 pub fn create_basic_gauges(vars: &HashMap<String, (String, String)>) -> Result<HashMap<String,GenericGauge<AtomicF64>>, prometheus::Error> {
     let mut gauges = HashMap::new();
-    for (raw_name, (value, description)) in vars {
+    for (raw_name, (value, description)) in vars.iter().filter(|(_, (y, _))| y.parse::<f64>().is_ok()) {
         match value.parse::<f64>() {
             Ok(_) => {
                 let mut gauge_name = raw_name.replace('.', "_");
