@@ -1,7 +1,7 @@
 use env_logger::{Builder, Env};
-use log::{debug, info, warn, error};
+use log::{debug, error, info, warn};
 use rups::blocking::Connection;
-use std::{time, thread, process};
+use std::{process, thread, time};
 
 fn main() {
     // Initialize logging

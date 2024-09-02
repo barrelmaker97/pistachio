@@ -1,7 +1,7 @@
 use log::{debug, warn};
+use prometheus_exporter::prometheus;
 use prometheus_exporter::prometheus::core::{AtomicF64, GenericGauge, GenericGaugeVec};
 use prometheus_exporter::prometheus::{register_gauge, register_gauge_vec};
-use prometheus_exporter::prometheus;
 use rups::blocking::Connection;
 use std::collections::HashMap;
 use std::env;
@@ -80,8 +80,8 @@ impl Config {
 
 #[derive(Debug)]
 pub struct Metrics {
-    basic_gauges: HashMap<String,GenericGauge<AtomicF64>>,
-    label_gauges: HashMap<String,(GenericGaugeVec<AtomicF64>, &'static [&'static str])>,
+    basic_gauges: HashMap<String, GenericGauge<AtomicF64>>,
+    label_gauges: HashMap<String, (GenericGaugeVec<AtomicF64>, &'static [&'static str])>,
 }
 
 impl Metrics {
@@ -159,8 +159,14 @@ pub fn create_label_gauges() -> Result<HashMap<String,(GenericGaugeVec<AtomicF64
     let mut label_gauges = HashMap::new();
     let status_gauge = register_gauge_vec!("ups_status", "UPS Status Code", &["status"])?;
     let beeper_gauge = register_gauge_vec!("ups_beeper_status", "Beeper Status", &["status"])?;
-    label_gauges.insert(String::from("ups.status"), (status_gauge, STATUSES));
-    label_gauges.insert(String::from("ups.beeper.status"), (beeper_gauge, BEEPER_STATUSES));
+    label_gauges.insert(
+        String::from("ups.status"),
+        (status_gauge, STATUSES),
+    );
+    label_gauges.insert(
+        String::from("ups.beeper.status"),
+        (beeper_gauge, BEEPER_STATUSES),
+    );
     Ok(label_gauges)
 }
 
