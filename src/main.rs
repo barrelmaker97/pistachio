@@ -22,7 +22,7 @@ fn main() {
     let mut conn = Connection::new(config.rups_config()).expect("Failed to connect to the UPS");
 
     // Get list of available UPS vars
-    let ups_vars = pistachio::get_available_vars(&mut conn, config.ups_name()).unwrap_or_else(|err| {
+    let ups_vars = pistachio::get_ups_vars(&mut conn, config.ups_name()).unwrap_or_else(|err| {
         error!("Could not get list of available variables from the UPS: {err}");
         process::exit(1);
     });

@@ -130,7 +130,7 @@ impl Metrics {
     }
 }
 
-pub fn get_available_vars(conn: &mut Connection, ups_name: &str) -> Result<HashMap<String, (String, String)>, rups::ClientError> {
+pub fn get_ups_vars(conn: &mut Connection, ups_name: &str) -> Result<HashMap<String, (String, String)>, rups::ClientError> {
     let available_vars = conn.list_vars(ups_name)?;
     let mut ups_vars = HashMap::new();
     for var in &available_vars {
