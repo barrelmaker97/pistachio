@@ -86,8 +86,8 @@ pub struct Metrics {
 
 impl Metrics {
     pub fn build(ups_vars: &HashMap<String, (String, String)>) -> Result<Metrics, Box<dyn Error>> {
-        let basic_gauges = create_basic_gauges(ups_vars)?;
-        let label_gauges = create_label_gauges()?;
+        let basic_gauges = Self::create_basic_gauges(ups_vars)?;
+        let label_gauges = Self::create_label_gauges()?;
 
         Ok(Metrics {
             basic_gauges,
@@ -109,7 +109,7 @@ impl Metrics {
                     warn!("Value of variable {} is not a float", var.name());
                 }
             } else if let Some((label_gauge, states)) = self.label_gauges.get(var.name()) {
-                update_label_gauge(label_gauge, states, &var.value());
+                Self::update_label_gauge(label_gauge, states, &var.value());
             } else {
                 debug!("Variable {} does not have an associated gauge to update", var.name());
             }
@@ -128,6 +128,49 @@ impl Metrics {
         }
         Ok(())
     }
+
+    fn create_basic_gauges(vars: &HashMap<String, (String, String)>) -> Result<HashMap<String,GenericGauge<AtomicF64>>, prometheus::Error> {
+        let mut gauges = HashMap::new();
+        for (raw_name, (_, description)) in vars.iter().filter(|(_, (y, _))| y.parse::<f64>().is_ok()) {
+            let mut gauge_name = raw_name.replace('.', "_");
+            if !gauge_name.starts_with("ups") {
+                gauge_name.insert_str(0, "ups_");
+            }
+            let gauge = register_gauge!(gauge_name, description)?;
+            gauges.insert(raw_name.to_string(), gauge);
+            debug!("Gauge created for variable {raw_name}");
+        }
+        Ok(gauges)
+    }
+
+    fn create_label_gauges() -> Result<HashMap<String,(GenericGaugeVec<AtomicF64>, &'static [&'static str])>, prometheus::Error> {
+        let mut label_gauges = HashMap::new();
+        let status_gauge = register_gauge_vec!("ups_status", "UPS Status Code", &["status"])?;
+        let beeper_gauge = register_gauge_vec!("ups_beeper_status", "Beeper Status", &["status"])?;
+        label_gauges.insert(
+            String::from("ups.status"),
+            (status_gauge, STATUSES),
+        );
+        label_gauges.insert(
+            String::from("ups.beeper.status"),
+            (beeper_gauge, BEEPER_STATUSES),
+        );
+        Ok(label_gauges)
+    }
+
+    fn update_label_gauge(label_gauge: &GenericGaugeVec<AtomicF64>, states: &[&str], value: &str) {
+        for state in states {
+            if let Ok(gauge) = label_gauge.get_metric_with_label_values(&[state]) {
+                if value.contains(state) {
+                    gauge.set(1.0);
+                } else {
+                    gauge.set(0.0);
+                }
+            } else {
+                warn!("Failed to update label gauge for {} state", state);
+            }
+        }
+    }
 }
 
 pub fn get_ups_vars(conn: &mut Connection, ups_name: &str) -> Result<HashMap<String, (String, String)>, rups::ClientError> {
@@ -139,49 +182,6 @@ pub fn get_ups_vars(conn: &mut Connection, ups_name: &str) -> Result<HashMap<Str
         ups_vars.insert(raw_name.to_string(), (var.value(), description));
     }
     Ok(ups_vars)
-}
-
-pub fn create_basic_gauges(vars: &HashMap<String, (String, String)>) -> Result<HashMap<String,GenericGauge<AtomicF64>>, prometheus::Error> {
-    let mut gauges = HashMap::new();
-    for (raw_name, (_, description)) in vars.iter().filter(|(_, (y, _))| y.parse::<f64>().is_ok()) {
-        let mut gauge_name = raw_name.replace('.', "_");
-        if !gauge_name.starts_with("ups") {
-            gauge_name.insert_str(0, "ups_");
-        }
-        let gauge = register_gauge!(gauge_name, description)?;
-        gauges.insert(raw_name.to_string(), gauge);
-        debug!("Gauge created for variable {raw_name}");
-    }
-    Ok(gauges)
-}
-
-pub fn create_label_gauges() -> Result<HashMap<String,(GenericGaugeVec<AtomicF64>, &'static [&'static str])>, prometheus::Error> {
-    let mut label_gauges = HashMap::new();
-    let status_gauge = register_gauge_vec!("ups_status", "UPS Status Code", &["status"])?;
-    let beeper_gauge = register_gauge_vec!("ups_beeper_status", "Beeper Status", &["status"])?;
-    label_gauges.insert(
-        String::from("ups.status"),
-        (status_gauge, STATUSES),
-    );
-    label_gauges.insert(
-        String::from("ups.beeper.status"),
-        (beeper_gauge, BEEPER_STATUSES),
-    );
-    Ok(label_gauges)
-}
-
-pub fn update_label_gauge(label_gauge: &GenericGaugeVec<AtomicF64>, states: &[&str], value: &str) {
-    for state in states {
-        if let Ok(gauge) = label_gauge.get_metric_with_label_values(&[state]) {
-            if value.contains(state) {
-                gauge.set(1.0);
-            } else {
-                gauge.set(0.0);
-            }
-        } else {
-            warn!("Failed to update label gauge for {} state", state);
-        }
-    }
 }
 
 #[cfg(test)]
