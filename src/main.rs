@@ -13,13 +13,14 @@ fn main() {
         error!("Could not load configuration: {err}");
         process::exit(1);
     });
-
-    // Log config info
     info!("UPS to be checked: {}", config.ups_fullname());
     info!("Poll Rate: Every {} seconds", config.poll_rate());
 
     // Create connection to UPS
-    let mut conn = Connection::new(config.rups_config()).expect("Failed to connect to the UPS");
+    let mut conn = Connection::new(config.rups_config()).unwrap_or_else(|err| {
+        error!("Failed to connect to the UPS: {err}");
+        process::exit(1);
+    });
 
     // Get list of available UPS vars
     let ups_vars = pistachio::get_ups_vars(&mut conn, config.ups_name()).unwrap_or_else(|err| {
@@ -27,17 +28,20 @@ fn main() {
         process::exit(1);
     });
 
+    // Create Prometheus metrics from available ups variables
     let metrics = pistachio::Metrics::build(&ups_vars).unwrap_or_else(|err| {
         error!("Could not create prometheus gauges from UPS variables: {err}");
         process::exit(1);
     });
-
     info!("{} gauges will be exported", metrics.count());
 
     // Start prometheus exporter
-    prometheus_exporter::start(*config.bind_addr()).expect("Failed to start prometheus exporter");
+    prometheus_exporter::start(*config.bind_addr()).unwrap_or_else(|err| {
+        error!("Failed to start prometheus exporter: {err}");
+        process::exit(1);
+    });
 
-    // Main loop that polls for variables and updates associated gauges
+    // Main loop that polls the NUT server and updates associated gauges
     loop {
         debug!("Polling UPS...");
         match conn.list_vars(config.ups_name()) {
