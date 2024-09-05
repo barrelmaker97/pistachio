@@ -11,7 +11,6 @@ use prometheus_exporter::prometheus::{register_gauge, register_gauge_vec};
 use rups::blocking::Connection;
 use std::collections::HashMap;
 use std::env;
-use std::error::Error;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::time::Duration;
 
@@ -112,7 +111,7 @@ pub struct Metrics {
 
 impl Metrics {
     /// A builder that creates metrics from a map of variable names, values, and descriptions.
-    pub fn build(ups_vars: &HashMap<String, (String, String)>) -> Result<Metrics, Box<dyn Error>> {
+    pub fn build(ups_vars: &HashMap<String, (String, String)>) -> Result<Metrics, prometheus::Error> {
         let basic_gauges = create_basic_gauges(ups_vars)?;
         let label_gauges = create_label_gauges()?;
 
