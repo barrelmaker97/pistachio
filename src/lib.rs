@@ -4,9 +4,10 @@ use prometheus_exporter::prometheus::core::{AtomicF64, GenericGauge, GenericGaug
 use prometheus_exporter::prometheus::{register_gauge, register_gauge_vec};
 use rups::blocking::Connection;
 use std::collections::HashMap;
+use std::env;
 use std::error::Error;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::{env, time};
+use std::time::Duration;
 
 const BIND_IP: IpAddr = IpAddr::V4(Ipv4Addr::UNSPECIFIED);
 const STATUSES: &[&str] = &["OL", "OB", "LB", "RB", "CHRG", "DISCHRG", "ALARM", "OVER", "TRIM", "BOOST", "BYPASS", "OFF", "CAL", "TEST", "FSD"];
@@ -42,7 +43,7 @@ impl Config {
         let rups_config = rups::ConfigBuilder::new()
             .with_host((ups_host.clone(), ups_port).try_into().unwrap_or_default())
             .with_debug(false) // Turn this on for debugging network chatter
-            .with_timeout(time::Duration::from_secs(poll_rate - 1))
+            .with_timeout(Duration::from_secs(poll_rate - 1))
             .build();
         let bind_addr = SocketAddr::new(BIND_IP, bind_port);
 
@@ -79,8 +80,8 @@ impl Config {
 
 #[derive(Debug)]
 pub struct Metrics {
-    basic_gauges: HashMap<String,GenericGauge<AtomicF64>>,
-    label_gauges: HashMap<String,(GenericGaugeVec<AtomicF64>, &'static [&'static str])>,
+    basic_gauges: HashMap<String, GenericGauge<AtomicF64>>,
+    label_gauges: HashMap<String, (GenericGaugeVec<AtomicF64>, &'static [&'static str])>,
 }
 
 impl Metrics {
@@ -129,7 +130,7 @@ impl Metrics {
     }
 }
 
-pub fn get_available_vars(conn: &mut Connection, ups_name: &str) -> Result<HashMap<String, (String, String)>, rups::ClientError> {
+pub fn get_ups_vars(conn: &mut Connection, ups_name: &str) -> Result<HashMap<String, (String, String)>, rups::ClientError> {
     let available_vars = conn.list_vars(ups_name)?;
     let mut ups_vars = HashMap::new();
     for var in &available_vars {
@@ -142,21 +143,14 @@ pub fn get_available_vars(conn: &mut Connection, ups_name: &str) -> Result<HashM
 
 pub fn create_basic_gauges(vars: &HashMap<String, (String, String)>) -> Result<HashMap<String,GenericGauge<AtomicF64>>, prometheus::Error> {
     let mut gauges = HashMap::new();
-    for (raw_name, (value, description)) in vars {
-        match value.parse::<f64>() {
-            Ok(_) => {
-                let mut gauge_name = raw_name.replace('.', "_");
-                if !gauge_name.starts_with("ups") {
-                    gauge_name.insert_str(0, "ups_");
-                }
-                let gauge = register_gauge!(gauge_name, description)?;
-                gauges.insert(raw_name.to_string(), gauge);
-                debug!("Gauge created for variable {raw_name}");
-            }
-            Err(_) => {
-                debug!("Not creating a gauge for variable {raw_name} since it is not a number");
-            }
+    for (raw_name, (_, description)) in vars.iter().filter(|(_, (y, _))| y.parse::<f64>().is_ok()) {
+        let mut gauge_name = raw_name.replace('.', "_");
+        if !gauge_name.starts_with("ups") {
+            gauge_name.insert_str(0, "ups_");
         }
+        let gauge = register_gauge!(gauge_name, description)?;
+        gauges.insert(raw_name.to_string(), gauge);
+        debug!("Gauge created for variable {raw_name}");
     }
     Ok(gauges)
 }
@@ -165,8 +159,14 @@ pub fn create_label_gauges() -> Result<HashMap<String,(GenericGaugeVec<AtomicF64
     let mut label_gauges = HashMap::new();
     let status_gauge = register_gauge_vec!("ups_status", "UPS Status Code", &["status"])?;
     let beeper_gauge = register_gauge_vec!("ups_beeper_status", "Beeper Status", &["status"])?;
-    label_gauges.insert(String::from("ups.status"), (status_gauge, STATUSES));
-    label_gauges.insert(String::from("ups.beeper.status"), (beeper_gauge, BEEPER_STATUSES));
+    label_gauges.insert(
+        String::from("ups.status"),
+        (status_gauge, STATUSES),
+    );
+    label_gauges.insert(
+        String::from("ups.beeper.status"),
+        (beeper_gauge, BEEPER_STATUSES),
+    );
     Ok(label_gauges)
 }
 
