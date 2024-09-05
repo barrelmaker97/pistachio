@@ -1,3 +1,9 @@
+#![deny(missing_docs)]
+
+//! # pistachio
+//!
+//! **Pistachio** is a Prometheus exporter written in Rust, designed for monitoring UPS devices using Network UPS Tools (NUT).
+
 use log::{debug, warn};
 use prometheus_exporter::prometheus;
 use prometheus_exporter::prometheus::core::{AtomicF64, GenericGauge, GenericGaugeVec};
@@ -9,10 +15,17 @@ use std::error::Error;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::time::Duration;
 
-const BIND_IP: IpAddr = IpAddr::V4(Ipv4Addr::UNSPECIFIED);
-const STATUSES: &[&str] = &["OL", "OB", "LB", "RB", "CHRG", "DISCHRG", "ALARM", "OVER", "TRIM", "BOOST", "BYPASS", "OFF", "CAL", "TEST", "FSD"];
-const BEEPER_STATUSES: &[&str] = &["enabled", "disabled", "muted"];
+/// Default bind address for the Prometheus exporter
+pub const BIND_IP: IpAddr = IpAddr::V4(Ipv4Addr::UNSPECIFIED);
 
+/// An array of possible UPS system states
+pub const STATUSES: &[&str] = &["OL", "OB", "LB", "RB", "CHRG", "DISCHRG", "ALARM", "OVER", "TRIM", "BOOST", "BYPASS", "OFF", "CAL", "TEST", "FSD"];
+
+/// An array of possible UPS beeper states
+pub const BEEPER_STATUSES: &[&str] = &["enabled", "disabled", "muted"];
+
+/// Configuration for connecting to and polling a NUT server as well as the bind address of a
+/// Prometheus exporter.
 #[derive(Debug)]
 pub struct Config {
     ups_name: String,
@@ -24,6 +37,7 @@ pub struct Config {
 }
 
 impl Config {
+    /// A builder that creates a configuration by reading config values from the environment
     pub fn build() -> Result<Config, &'static str> {
         let ups_name = env::var("UPS_NAME").unwrap_or_else(|_| "ups".into());
         let ups_host = env::var("UPS_HOST").unwrap_or_else(|_| "localhost".into());
