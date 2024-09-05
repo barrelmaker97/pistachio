@@ -73,26 +73,31 @@ impl Config {
 
     /// Returns the full name of the UPS defined in the configuration. The full name uses the
     /// format of `ups@host:port`.
+    #[must_use]
     pub fn ups_fullname(&self) -> String {
         format!("{}@{}:{}", self.ups_name, self.ups_host, self.ups_port)
     }
 
     /// Returns the name of the UPS defined in the configuration.
+    #[must_use]
     pub fn ups_name(&self) -> &str {
         self.ups_name.as_str()
     }
 
     /// Returns the rups configuration which is used to create a connection to the UPS.
+    #[must_use]
     pub fn rups_config(&self) -> &rups::Config {
         &self.rups_config
     }
 
     /// Returns the rate at which the NUT server will be polled for data, in seconds.
+    #[must_use]
     pub fn poll_rate(&self) -> &u64 {
         &self.poll_rate
     }
 
     /// Returns the address at which the Prometheus exprter will run.
+    #[must_use]
     pub fn bind_addr(&self) -> &SocketAddr {
         &self.bind_addr
     }
@@ -118,6 +123,7 @@ impl Metrics {
     }
 
     /// Returns the number of all gauges registered.
+    #[must_use]
     pub fn count(&self) -> usize {
         self.basic_gauges.len() + self.label_gauges.len()
     }
