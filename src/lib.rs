@@ -64,7 +64,6 @@ impl Config {
         }
         let rups_config = rups::ConfigBuilder::new()
             .with_host((ups_host.clone(), ups_port).try_into().unwrap_or_default())
-            .with_debug(false) // Turn this on for debugging network chatter
             .with_timeout(Duration::from_secs(poll_rate - 1))
             .build();
         let bind_addr = SocketAddr::new(BIND_IP, bind_port);
@@ -144,7 +143,7 @@ impl Metrics {
                 if let Ok(value) = var.value().parse::<f64>() {
                     gauge.set(value);
                 } else {
-                    warn!("Value of variable {} is not a float", var.name());
+                    warn!("Failed to update variable {} because the value was not a float", var.name());
                 }
             } else if let Some((label_gauge, states)) = self.label_gauges.get(var.name()) {
                 update_label_gauge(label_gauge, states, &var.value());
