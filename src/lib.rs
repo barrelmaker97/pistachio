@@ -37,6 +37,15 @@ pub struct Config {
 
 impl Config {
     /// A builder that creates a configuration by reading config values from the environment
+    /// The following table shows which env vars are read and their default values:
+    ///
+    /// | Parameter     | Description                                                      | Default     |
+    /// |---------------|------------------------------------------------------------------|-------------|
+    /// | `UPS_NAME`    | Name of the UPS to monitor.                                      | `ups`       |
+    /// | `UPS_HOST`    | Hostname of the NUT server to monitor.                           | `localhost` |
+    /// | `UPS_PORT`    | Port of the NUT server to monitor.                               | `3493`      |
+    /// | `BIND_PORT`   | Port on which the exporter will serve metrics for Prometheus.    | `9120`      |
+    /// | `POLL_RATE`   | Time in seconds between requests to the NUT server. Must be < 1. | `10`        |
     pub fn build() -> Result<Config, &'static str> {
         let ups_name = env::var("UPS_NAME").unwrap_or_else(|_| "ups".into());
         let ups_host = env::var("UPS_HOST").unwrap_or_else(|_| "localhost".into());
