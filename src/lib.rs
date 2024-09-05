@@ -1,3 +1,9 @@
+#![deny(missing_docs)]
+
+//! # pistachio
+//!
+//! Pistachio is a Prometheus exporter written in Rust, designed for monitoring UPS devices using Network UPS Tools (NUT).
+
 use log::{debug, warn};
 use prometheus_exporter::prometheus;
 use prometheus_exporter::prometheus::core::{AtomicF64, GenericGauge, GenericGaugeVec};
@@ -5,14 +11,20 @@ use prometheus_exporter::prometheus::{register_gauge, register_gauge_vec};
 use rups::blocking::Connection;
 use std::collections::HashMap;
 use std::env;
-use std::error::Error;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::time::Duration;
 
+/// Default bind address for the Prometheus exporter
 const BIND_IP: IpAddr = IpAddr::V4(Ipv4Addr::UNSPECIFIED);
+
+/// An array of possible UPS system states
 const STATUSES: &[&str] = &["OL", "OB", "LB", "RB", "CHRG", "DISCHRG", "ALARM", "OVER", "TRIM", "BOOST", "BYPASS", "OFF", "CAL", "TEST", "FSD"];
+
+/// An array of possible UPS beeper states
 const BEEPER_STATUSES: &[&str] = &["enabled", "disabled", "muted"];
 
+/// Configuration for connecting to and polling a NUT server as well as the bind address of a
+/// Prometheus exporter.
 #[derive(Debug)]
 pub struct Config {
     ups_name: String,
@@ -24,6 +36,16 @@ pub struct Config {
 }
 
 impl Config {
+    /// A builder that creates a configuration by reading config values from the environment
+    /// The following table shows which env vars are read and their default values:
+    ///
+    /// | Parameter     | Description                                                      | Default     |
+    /// |---------------|------------------------------------------------------------------|-------------|
+    /// | `UPS_NAME`    | Name of the UPS to monitor.                                      | `ups`       |
+    /// | `UPS_HOST`    | Hostname of the NUT server to monitor.                           | `localhost` |
+    /// | `UPS_PORT`    | Port of the NUT server to monitor.                               | `3493`      |
+    /// | `BIND_PORT`   | Port on which the exporter will serve metrics for Prometheus.    | `9120`      |
+    /// | `POLL_RATE`   | Time in seconds between requests to the NUT server. Must be < 1. | `10`        |
     pub fn build() -> Result<Config, &'static str> {
         let ups_name = env::var("UPS_NAME").unwrap_or_else(|_| "ups".into());
         let ups_host = env::var("UPS_HOST").unwrap_or_else(|_| "localhost".into());
@@ -57,27 +79,39 @@ impl Config {
         })
     }
 
+    /// Returns the full name of the UPS defined in the configuration. The full name uses the
+    /// format of `ups@host:port`.
+    #[must_use]
     pub fn ups_fullname(&self) -> String {
         format!("{}@{}:{}", self.ups_name, self.ups_host, self.ups_port)
     }
 
+    /// Returns the name of the UPS defined in the configuration.
+    #[must_use]
     pub fn ups_name(&self) -> &str {
         self.ups_name.as_str()
     }
 
+    /// Returns the rups configuration which is used to create a connection to the UPS.
+    #[must_use]
     pub fn rups_config(&self) -> &rups::Config {
         &self.rups_config
     }
 
+    /// Returns the rate at which the NUT server will be polled for data, in seconds.
+    #[must_use]
     pub fn poll_rate(&self) -> &u64 {
         &self.poll_rate
     }
 
+    /// Returns the address at which the Prometheus exprter will run.
+    #[must_use]
     pub fn bind_addr(&self) -> &SocketAddr {
         &self.bind_addr
     }
 }
 
+/// A collection of all registered Prometheus metrics, mapped to the name of the UPS variable they represent.
 #[derive(Debug)]
 pub struct Metrics {
     basic_gauges: HashMap<String, GenericGauge<AtomicF64>>,
@@ -85,7 +119,8 @@ pub struct Metrics {
 }
 
 impl Metrics {
-    pub fn build(ups_vars: &HashMap<String, (String, String)>) -> Result<Metrics, Box<dyn Error>> {
+    /// A builder that creates metrics from a map of variable names, values, and descriptions.
+    pub fn build(ups_vars: &HashMap<String, (String, String)>) -> Result<Metrics, prometheus::Error> {
         let basic_gauges = create_basic_gauges(ups_vars)?;
         let label_gauges = create_label_gauges()?;
 
@@ -95,10 +130,13 @@ impl Metrics {
         })
     }
 
+    /// Returns the number of all gauges registered.
+    #[must_use]
     pub fn count(&self) -> usize {
         self.basic_gauges.len() + self.label_gauges.len()
     }
 
+    /// Takes a list of variable names and values to update all associated Prometheus metrics.
     pub fn update(&self, var_list: &Vec<rups::Variable>) {
         for var in var_list {
             if let Some(gauge) = self.basic_gauges.get(var.name()) {
@@ -116,7 +154,8 @@ impl Metrics {
         }
     }
 
-    pub fn reset(&self) -> Result<(), Box<dyn Error>> {
+    /// Resets all metrics to zero.
+    pub fn reset(&self) -> Result<(), prometheus::Error> {
         for gauge in self.basic_gauges.values() {
             gauge.set(0.0);
         }
@@ -130,6 +169,8 @@ impl Metrics {
     }
 }
 
+/// Connects to the NUT server to produce a map of all available UPS variables, along with their
+/// values and descriptions.
 pub fn get_ups_vars(conn: &mut Connection, ups_name: &str) -> Result<HashMap<String, (String, String)>, rups::ClientError> {
     let available_vars = conn.list_vars(ups_name)?;
     let mut ups_vars = HashMap::new();
@@ -141,7 +182,10 @@ pub fn get_ups_vars(conn: &mut Connection, ups_name: &str) -> Result<HashMap<Str
     Ok(ups_vars)
 }
 
-pub fn create_basic_gauges(vars: &HashMap<String, (String, String)>) -> Result<HashMap<String,GenericGauge<AtomicF64>>, prometheus::Error> {
+/// Takes a map of UPS variables, values, and descriptions to create Prometheus gauges. Gauges are
+/// only created for variables with values that can be parsed as floats, since Prometheus gauges can
+/// only have floats as values.
+fn create_basic_gauges(vars: &HashMap<String, (String, String)>) -> Result<HashMap<String,GenericGauge<AtomicF64>>, prometheus::Error> {
     let mut gauges = HashMap::new();
     for (raw_name, (_, description)) in vars.iter().filter(|(_, (y, _))| y.parse::<f64>().is_ok()) {
         let mut gauge_name = raw_name.replace('.', "_");
@@ -155,7 +199,9 @@ pub fn create_basic_gauges(vars: &HashMap<String, (String, String)>) -> Result<H
     Ok(gauges)
 }
 
-pub fn create_label_gauges() -> Result<HashMap<String,(GenericGaugeVec<AtomicF64>, &'static [&'static str])>, prometheus::Error> {
+/// Creates label gauges in Prometheus for UPS variables that represent a set of potential status.
+/// This currently only includes overall UPS status and beeper status.
+fn create_label_gauges() -> Result<HashMap<String,(GenericGaugeVec<AtomicF64>, &'static [&'static str])>, prometheus::Error> {
     let mut label_gauges = HashMap::new();
     let status_gauge = register_gauge_vec!("ups_status", "UPS Status Code", &["status"])?;
     let beeper_gauge = register_gauge_vec!("ups_beeper_status", "Beeper Status", &["status"])?;
@@ -170,7 +216,10 @@ pub fn create_label_gauges() -> Result<HashMap<String,(GenericGaugeVec<AtomicF64
     Ok(label_gauges)
 }
 
-pub fn update_label_gauge(label_gauge: &GenericGaugeVec<AtomicF64>, states: &[&str], value: &str) {
+/// Takes a label gauge, all of it's possible states, and the current value of the variable from
+/// the UPS. Each label of the gauge is updated to reflect all current states present in the
+/// value from the UPS.
+fn update_label_gauge(label_gauge: &GenericGaugeVec<AtomicF64>, states: &[&str], value: &str) {
     for state in states {
         if let Ok(gauge) = label_gauge.get_metric_with_label_values(&[state]) {
             if value.contains(state) {
