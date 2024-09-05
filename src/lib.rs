@@ -15,13 +15,13 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::time::Duration;
 
 /// Default bind address for the Prometheus exporter
-pub const BIND_IP: IpAddr = IpAddr::V4(Ipv4Addr::UNSPECIFIED);
+const BIND_IP: IpAddr = IpAddr::V4(Ipv4Addr::UNSPECIFIED);
 
 /// An array of possible UPS system states
-pub const STATUSES: &[&str] = &["OL", "OB", "LB", "RB", "CHRG", "DISCHRG", "ALARM", "OVER", "TRIM", "BOOST", "BYPASS", "OFF", "CAL", "TEST", "FSD"];
+const STATUSES: &[&str] = &["OL", "OB", "LB", "RB", "CHRG", "DISCHRG", "ALARM", "OVER", "TRIM", "BOOST", "BYPASS", "OFF", "CAL", "TEST", "FSD"];
 
 /// An array of possible UPS beeper states
-pub const BEEPER_STATUSES: &[&str] = &["enabled", "disabled", "muted"];
+const BEEPER_STATUSES: &[&str] = &["enabled", "disabled", "muted"];
 
 /// Configuration for connecting to and polling a NUT server as well as the bind address of a
 /// Prometheus exporter.
