@@ -176,7 +176,7 @@ pub fn get_ups_vars(conn: &mut Connection, ups_name: &str) -> Result<HashMap<Str
 /// Takes a map of UPS variables, values, and descriptions to create Prometheus gauges. Gauges are
 /// only created for variables with values that can be parsed as floats, since Prometheus gauges can
 /// only have floats as values.
-pub fn create_basic_gauges(vars: &HashMap<String, (String, String)>) -> Result<HashMap<String,GenericGauge<AtomicF64>>, prometheus::Error> {
+fn create_basic_gauges(vars: &HashMap<String, (String, String)>) -> Result<HashMap<String,GenericGauge<AtomicF64>>, prometheus::Error> {
     let mut gauges = HashMap::new();
     for (raw_name, (_, description)) in vars.iter().filter(|(_, (y, _))| y.parse::<f64>().is_ok()) {
         let mut gauge_name = raw_name.replace('.', "_");
@@ -192,7 +192,7 @@ pub fn create_basic_gauges(vars: &HashMap<String, (String, String)>) -> Result<H
 
 /// Creates label gauges in Prometheus for UPS variables that represent a set of potential status.
 /// This currently only includes overall UPS status and beeper status.
-pub fn create_label_gauges() -> Result<HashMap<String,(GenericGaugeVec<AtomicF64>, &'static [&'static str])>, prometheus::Error> {
+fn create_label_gauges() -> Result<HashMap<String,(GenericGaugeVec<AtomicF64>, &'static [&'static str])>, prometheus::Error> {
     let mut label_gauges = HashMap::new();
     let status_gauge = register_gauge_vec!("ups_status", "UPS Status Code", &["status"])?;
     let beeper_gauge = register_gauge_vec!("ups_beeper_status", "Beeper Status", &["status"])?;
@@ -210,7 +210,7 @@ pub fn create_label_gauges() -> Result<HashMap<String,(GenericGaugeVec<AtomicF64
 /// Takes a label gauge, all of it's possible states, and the current value of the variable from
 /// the UPS. Each label of the gauge is updated to reflect all current states present in the
 /// value from the UPS.
-pub fn update_label_gauge(label_gauge: &GenericGaugeVec<AtomicF64>, states: &[&str], value: &str) {
+fn update_label_gauge(label_gauge: &GenericGaugeVec<AtomicF64>, states: &[&str], value: &str) {
     for state in states {
         if let Ok(gauge) = label_gauge.get_metric_with_label_values(&[state]) {
             if value.contains(state) {
