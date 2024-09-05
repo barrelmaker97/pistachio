@@ -147,7 +147,7 @@ impl Metrics {
     }
 
     /// Resets all metrics to zero.
-    pub fn reset(&self) -> Result<(), Box<dyn Error>> {
+    pub fn reset(&self) -> Result<(), prometheus::Error> {
         for gauge in self.basic_gauges.values() {
             gauge.set(0.0);
         }
