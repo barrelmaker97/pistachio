@@ -15,7 +15,12 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::time::Duration;
 
 /// Default bind address for the Prometheus exporter
-const BIND_IP: IpAddr = IpAddr::V4(Ipv4Addr::UNSPECIFIED);
+const DEFAULT_UPS_NAME: &str = "ups";
+const DEFAULT_UPS_HOST: &str = "127.0.0.1";
+const DEFAULT_UPS_PORT: u16 = 3493;
+const DEFAULT_BIND_IP: IpAddr = IpAddr::V4(Ipv4Addr::UNSPECIFIED);
+const DEFAULT_BIND_PORT: u16 = 9120;
+const DEFAULT_POLL_RATE: u64 = 10;
 
 /// An array of possible UPS system states
 const STATUSES: &[&str] = &["OL", "OB", "LB", "RB", "CHRG", "DISCHRG", "ALARM", "OVER", "TRIM", "BOOST", "BYPASS", "OFF", "CAL", "TEST", "FSD"];
@@ -39,25 +44,29 @@ impl Config {
     /// A builder that creates a configuration by reading config values from the environment
     /// The following table shows which env vars are read and their default values:
     ///
-    /// | Parameter     | Description                                                      | Default     |
-    /// |---------------|------------------------------------------------------------------|-------------|
-    /// | `UPS_NAME`    | Name of the UPS to monitor.                                      | `ups`       |
-    /// | `UPS_HOST`    | Hostname of the NUT server to monitor.                           | `localhost` |
-    /// | `UPS_PORT`    | Port of the NUT server to monitor.                               | `3493`      |
-    /// | `BIND_PORT`   | Port on which the exporter will serve metrics for Prometheus.    | `9120`      |
-    /// | `POLL_RATE`   | Time in seconds between requests to the NUT server. Must be < 1. | `10`        |
+    /// | Parameter   | Description                                                      | Default     |
+    /// |-------------|------------------------------------------------------------------|-------------|
+    /// | `UPS_NAME`  | Name of the UPS to monitor.                                      | `ups`       |
+    /// | `UPS_HOST`  | Hostname of the NUT server to monitor.                           | `127.0.0.1` |
+    /// | `UPS_PORT`  | Port of the NUT server to monitor.                               | `3493`      |
+    /// | `BIND_IP`   | IP address on which the exporter will serve metrics.             | `0.0.0.0`   |
+    /// | `BIND_PORT` | Port on which the exporter will serve metrics.                   | `9120`      |
+    /// | `POLL_RATE` | Time in seconds between requests to the NUT server. Must be < 1. | `10`        |
     pub fn build() -> Result<Config, &'static str> {
-        let ups_name = env::var("UPS_NAME").unwrap_or_else(|_| "ups".into());
-        let ups_host = env::var("UPS_HOST").unwrap_or_else(|_| "localhost".into());
+        let ups_name = env::var("UPS_NAME").unwrap_or_else(|_| DEFAULT_UPS_NAME.into());
+        let ups_host = env::var("UPS_HOST").unwrap_or_else(|_| DEFAULT_UPS_HOST.into());
         let ups_port = env::var("UPS_PORT")
             .and_then(|s| s.parse::<u16>().map_err(|_| env::VarError::NotPresent))
-            .unwrap_or(3493);
+            .unwrap_or(DEFAULT_UPS_PORT);
+        let bind_ip = env::var("BIND_IP")
+            .and_then(|s| s.parse::<IpAddr>().map_err(|_| env::VarError::NotPresent))
+            .unwrap_or(DEFAULT_BIND_IP);
         let bind_port = env::var("BIND_PORT")
             .and_then(|s| s.parse::<u16>().map_err(|_| env::VarError::NotPresent))
-            .unwrap_or(9120);
+            .unwrap_or(DEFAULT_BIND_PORT);
         let mut poll_rate = env::var("POLL_RATE")
             .and_then(|s| s.parse::<u64>().map_err(|_| env::VarError::NotPresent))
-            .unwrap_or(10);
+            .unwrap_or(DEFAULT_POLL_RATE);
         if poll_rate < 2 {
             warn!("POLL_RATE is too low, increasing to minimum of 2 seconds");
             poll_rate = 2;
@@ -66,7 +75,7 @@ impl Config {
             .with_host((ups_host.clone(), ups_port).try_into().unwrap_or_default())
             .with_timeout(Duration::from_secs(poll_rate - 1))
             .build();
-        let bind_addr = SocketAddr::new(BIND_IP, bind_port);
+        let bind_addr = SocketAddr::new(bind_ip, bind_port);
 
         Ok(Config {
             ups_name,
@@ -318,10 +327,10 @@ mod tests {
     fn create_config() {
         let config = Config::build().unwrap();
         dbg!(&config);
-        assert_eq!(config.ups_fullname(), String::from("ups@localhost:3493"));
-        assert_eq!(config.ups_name(), "ups");
-        assert_eq!(*config.poll_rate(), 10);
-        assert_eq!(*config.bind_addr(), SocketAddr::new(BIND_IP, 9120));
+        assert_eq!(config.ups_fullname(), format!("{DEFAULT_UPS_NAME}@{DEFAULT_UPS_HOST}:{DEFAULT_UPS_PORT}"));
+        assert_eq!(config.ups_name(), DEFAULT_UPS_NAME);
+        assert_eq!(*config.poll_rate(), DEFAULT_POLL_RATE);
+        assert_eq!(*config.bind_addr(), SocketAddr::new(DEFAULT_BIND_IP, DEFAULT_BIND_PORT));
     }
 
     #[test]

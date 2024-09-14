@@ -3,14 +3,15 @@
 
 ## Configuration
 Configuration is managed through environment variables, detailed below:
-| Parameter     | Description                                                      | Default     |
-|---------------|------------------------------------------------------------------|-------------|
-| `UPS_NAME`    | Name of the UPS to monitor.                                      | `ups`       |
-| `UPS_HOST`    | Hostname of the NUT server to monitor.                           | `localhost` |
-| `UPS_PORT`    | Port of the NUT server to monitor.                               | `3493`      |
-| `BIND_PORT`   | Port on which the exporter will serve metrics for Prometheus.    | `9120`      |
-| `RUST_LOG`    | Logging level of the exporter.                                   | `info`      |
-| `POLL_RATE`   | Time in seconds between requests to the NUT server. Must be < 1. | `10`        |
+| Parameter   | Description                                                      | Default     |
+|-------------|------------------------------------------------------------------|-------------|
+| `UPS_NAME`  | Name of the UPS to monitor.                                      | `ups`       |
+| `UPS_HOST`  | Hostname of the NUT server to monitor.                           | `127.0.0.1` |
+| `UPS_PORT`  | Port of the NUT server to monitor.                               | `3493`      |
+| `BIND_IP`   | IP address on which the exporter will serve metrics.             | `0.0.0.0`   |
+| `BIND_PORT` | Port on which the exporter will serve metrics.                   | `9120`      |
+| `RUST_LOG`  | Logging level of the exporter.                                   | `info`      |
+| `POLL_RATE` | Time in seconds between requests to the NUT server. Must be < 1. | `10`        |
 
 ## Features
 
