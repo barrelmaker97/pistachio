@@ -328,7 +328,7 @@ mod tests {
         let config = Config::build().unwrap();
         dbg!(&config);
         assert_eq!(config.ups_fullname(), format!("{DEFAULT_UPS_NAME}@{DEFAULT_UPS_HOST}:{DEFAULT_UPS_PORT}"));
-        assert_eq!(config.ups_name(), "ups");
+        assert_eq!(config.ups_name(), DEFAULT_UPS_NAME);
         assert_eq!(*config.poll_rate(), DEFAULT_POLL_RATE);
         assert_eq!(*config.bind_addr(), SocketAddr::new(BIND_IP, DEFAULT_BIND_PORT));
     }
