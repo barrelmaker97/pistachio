@@ -9,6 +9,7 @@ keywords = ["ups", "nut", "prometheus", "exporter", "monitoring"]
 authors = ["Nolan Cooper <nolancooper97@gmail.com>"]
 
 [dependencies]
+clap = { version = "4.5.17", features = ["derive", "env"] }
 env_logger = "0.11.5"
 log = "0.4.22"
 prometheus_exporter = "0.8.5"

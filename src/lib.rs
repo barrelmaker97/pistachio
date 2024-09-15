@@ -4,6 +4,7 @@
 //!
 //! Pistachio is a Prometheus exporter written in Rust, designed for monitoring UPS devices using Network UPS Tools (NUT).
 
+use clap::Parser;
 use log::{debug, warn};
 use prometheus_exporter::prometheus;
 use prometheus_exporter::prometheus::core::{AtomicF64, GenericGauge, GenericGaugeVec};
@@ -27,6 +28,30 @@ const STATUSES: &[&str] = &["OL", "OB", "LB", "RB", "CHRG", "DISCHRG", "ALARM", 
 
 /// An array of possible UPS beeper states
 const BEEPER_STATUSES: &[&str] = &["enabled", "disabled", "muted"];
+
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+/// A collection of arguments to be parsed from the command line
+pub struct Args {
+    /// Name of the UPS to monitor
+    #[arg(long, env, default_value_t = String::from("ups"))]
+    ups_name: String,
+    /// Hostname of the NUT server to monitor
+    #[arg(long, env, default_value_t = String::from("127.0.0.1"))]
+    ups_host: String,
+    /// Port of the NUT server to monitor
+    #[arg(long, env, default_value_t = 3493)]
+    ups_port: u16,
+    /// IP address on which the exporter will serve metrics
+    #[arg(long, env, default_value_t = String::from("0.0.0.0"))]
+    bind_addr: String,
+    /// Port on which the exporter will serve metrics
+    #[arg(long, env, default_value_t = 9120)]
+    bind_port: u16,
+    /// Time in seconds between requests to the NUT server. Must be < 1
+    #[arg(long, env, default_value_t = 10)]
+    poll_rate: u64,
+}
 
 /// Configuration for connecting to and polling a NUT server as well as the bind address of a
 /// Prometheus exporter.

@@ -1,9 +1,12 @@
+use clap::Parser;
 use env_logger::{Builder, Env};
 use log::{debug, error, info, warn};
 use rups::blocking::Connection;
 use std::{process, thread, time};
 
 fn main() {
+    let args = pistachio::Args::parse();
+
     // Initialize logging
     Builder::from_env(Env::default().default_filter_or("info")).init();
     info!("Exporter started!");
