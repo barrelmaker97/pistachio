@@ -2,31 +2,38 @@ use clap::Parser;
 use env_logger::{Builder, Env};
 use log::{debug, error, info, warn};
 use rups::blocking::Connection;
+use std::net::{IpAddr, SocketAddr};
+use std::time::Duration;
 use std::{process, thread, time};
 
 fn main() {
     let args = pistachio::Args::parse();
+    let rups_config = rups::ConfigBuilder::new()
+        .with_host((args.ups_host.clone(), args.ups_port).try_into().unwrap_or_default())
+        .with_timeout(Duration::from_secs(args.poll_rate - 1))
+        .build();
+    let bind_ip = args.bind_ip.parse::<IpAddr>().unwrap();
+    let bind_addr = SocketAddr::new(bind_ip, args.bind_port);
 
     // Initialize logging
     Builder::from_env(Env::default().default_filter_or("info")).init();
-    info!("Exporter started!");
 
     // Read config from the environment
-    let config = pistachio::Config::build().unwrap_or_else(|err| {
-        error!("Could not load configuration: {err}");
-        process::exit(1);
-    });
-    info!("UPS to be checked: {}", config.ups_fullname());
-    info!("Poll Rate: Every {} seconds", config.poll_rate());
+    //let config = pistachio::Config::build().unwrap_or_else(|err| {
+        //error!("Could not load configuration: {err}");
+        //process::exit(1);
+    //});
+    info!("UPS to be checked: {}@{}:{}", args.ups_name, args.ups_host, args.ups_port);
+    info!("Poll Rate: Every {} seconds", args.poll_rate);
 
     // Create connection to UPS
-    let mut conn = Connection::new(config.rups_config()).unwrap_or_else(|err| {
+    let mut conn = Connection::new(&rups_config).unwrap_or_else(|err| {
         error!("Failed to connect to the UPS: {err}");
         process::exit(1);
     });
 
     // Get list of available UPS vars
-    let ups_vars = pistachio::get_ups_vars(&mut conn, config.ups_name()).unwrap_or_else(|err| {
+    let ups_vars = pistachio::get_ups_vars(&mut conn, args.ups_name.as_str()).unwrap_or_else(|err| {
         error!("Could not get list of available variables from the UPS: {err}");
         process::exit(1);
     });
@@ -39,7 +46,7 @@ fn main() {
     info!("{} gauges will be exported", metrics.count());
 
     // Start prometheus exporter
-    prometheus_exporter::start(*config.bind_addr()).unwrap_or_else(|err| {
+    prometheus_exporter::start(bind_addr).unwrap_or_else(|err| {
         error!("Failed to start prometheus exporter: {err}");
         process::exit(1);
     });
@@ -47,7 +54,7 @@ fn main() {
     // Main loop that polls the NUT server and updates associated gauges
     loop {
         debug!("Polling UPS...");
-        match conn.list_vars(config.ups_name()) {
+        match conn.list_vars(args.ups_name.as_str()) {
             Ok(var_list) => {
                 metrics.update(&var_list);
                 debug!("Metrics updated");
@@ -61,6 +68,6 @@ fn main() {
                 debug!("Reset gauges to zero because the UPS was unreachable");
             }
         }
-        thread::sleep(time::Duration::from_secs(*config.poll_rate()));
+        thread::sleep(time::Duration::from_secs(args.poll_rate));
     }
 }
