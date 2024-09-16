@@ -28,35 +28,25 @@ const STATUSES: &[&str] = &["OL", "OB", "LB", "RB", "CHRG", "DISCHRG", "ALARM", 
 const BEEPER_STATUSES: &[&str] = &["enabled", "disabled", "muted"];
 
 /// A collection of arguments to be parsed from the command line or environment.
-/// The following table shows which env vars are read and their default values:
-///
-/// | Parameter   | Description                                                      | Default     |
-/// |-------------|------------------------------------------------------------------|-------------|
-/// | `UPS_NAME`  | Name of the UPS to monitor.                                      | `ups`       |
-/// | `UPS_HOST`  | Hostname of the NUT server to monitor.                           | `127.0.0.1` |
-/// | `UPS_PORT`  | Port of the NUT server to monitor.                               | `3493`      |
-/// | `BIND_IP`   | IP address on which the exporter will serve metrics.             | `0.0.0.0`   |
-/// | `BIND_PORT` | Port on which the exporter will serve metrics.                   | `9120`      |
-/// | `POLL_RATE` | Time in seconds between requests to the NUT server. Must be < 1. | `10`        |
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 pub struct Args {
-    /// Name of the UPS to monitor
+    /// Name of the UPS to monitor. Default is `ups`.
     #[arg(long, env, default_value_t = String::from(DEFAULT_UPS_NAME))]
     pub ups_name: String,
-    /// Hostname of the NUT server to monitor
+    /// Hostname of the NUT server to monitor. Default is `127.0.0.1`.
     #[arg(long, env, default_value_t = String::from(DEFAULT_UPS_HOST))]
     pub ups_host: String,
-    /// Port of the NUT server to monitor
+    /// Port of the NUT server to monitor. Default is `3493`.
     #[arg(long, env, default_value_t = DEFAULT_UPS_PORT)]
     pub ups_port: u16,
-    /// IP address on which the exporter will serve metrics
+    /// IP address on which the exporter will serve metrics. Default is `0.0.0.0`.
     #[arg(long, env, default_value_t = DEFAULT_BIND_IP)]
     pub bind_ip: IpAddr,
-    /// Port on which the exporter will serve metrics
+    /// Port on which the exporter will serve metrics. Default is `9120`.
     #[arg(long, env, default_value_t = DEFAULT_BIND_PORT)]
     pub bind_port: u16,
-    /// Time in seconds between requests to the NUT server. Must be < 1
+    /// Time in seconds between requests to the NUT server. Must be < 1. Default is `10`.
     #[arg(long, env, default_value_t = DEFAULT_POLL_RATE, value_parser = clap::value_parser!(u64).range(2..))]
     pub poll_rate: u64,
 }

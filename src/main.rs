@@ -4,7 +4,7 @@ use log::{debug, error, info, warn};
 use rups::blocking::Connection;
 use std::net::SocketAddr;
 use std::time::Duration;
-use std::{process, thread, time};
+use std::{process, thread};
 
 fn main() {
     // Initialize logging
@@ -64,6 +64,6 @@ fn main() {
                 debug!("Reset gauges to zero because the UPS was unreachable");
             }
         }
-        thread::sleep(time::Duration::from_secs(args.poll_rate));
+        thread::sleep(Duration::from_secs(args.poll_rate));
     }
 }
