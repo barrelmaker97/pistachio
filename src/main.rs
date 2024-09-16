@@ -12,8 +12,7 @@ fn main() {
     // Initialize logging
     Builder::from_env(Env::default().default_filter_or("info")).init();
 
-    info!("UPS to be checked: {}@{}:{}", args.ups_name, args.ups_host, args.ups_port);
-    info!("Poll Rate: Every {} seconds", args.poll_rate);
+    info!("UPS {}@{}:{} will be checked every {} seconds", args.ups_name, args.ups_host, args.ups_port, args.poll_rate);
 
     // Create connection to UPS
     let rups_config = rups::ConfigBuilder::new()
