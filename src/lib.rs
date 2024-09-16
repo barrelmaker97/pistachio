@@ -11,11 +11,9 @@ use prometheus_exporter::prometheus::core::{AtomicF64, GenericGauge, GenericGaug
 use prometheus_exporter::prometheus::{register_gauge, register_gauge_vec};
 use rups::blocking::Connection;
 use std::collections::HashMap;
-use std::env;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::time::Duration;
+use std::net::{IpAddr, Ipv4Addr};
 
-/// Default bind address for the Prometheus exporter
+/// Default configuration options
 const DEFAULT_UPS_NAME: &str = "ups";
 const DEFAULT_UPS_HOST: &str = "127.0.0.1";
 const DEFAULT_UPS_PORT: u16 = 3493;
@@ -31,117 +29,36 @@ const BEEPER_STATUSES: &[&str] = &["enabled", "disabled", "muted"];
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
-/// A collection of arguments to be parsed from the command line
+/// A collection of arguments to be parsed from the command line or environment
+/// The following table shows which env vars are read and their default values:
+///
+/// | Parameter   | Description                                                      | Default     |
+/// |-------------|------------------------------------------------------------------|-------------|
+/// | `UPS_NAME`  | Name of the UPS to monitor.                                      | `ups`       |
+/// | `UPS_HOST`  | Hostname of the NUT server to monitor.                           | `127.0.0.1` |
+/// | `UPS_PORT`  | Port of the NUT server to monitor.                               | `3493`      |
+/// | `BIND_IP`   | IP address on which the exporter will serve metrics.             | `0.0.0.0`   |
+/// | `BIND_PORT` | Port on which the exporter will serve metrics.                   | `9120`      |
+/// | `POLL_RATE` | Time in seconds between requests to the NUT server. Must be < 1. | `10`        |
 pub struct Args {
     /// Name of the UPS to monitor
-    #[arg(long, env, default_value_t = String::from("ups"))]
+    #[arg(long, env, default_value_t = String::from(DEFAULT_UPS_NAME))]
     pub ups_name: String,
     /// Hostname of the NUT server to monitor
-    #[arg(long, env, default_value_t = String::from("127.0.0.1"))]
+    #[arg(long, env, default_value_t = String::from(DEFAULT_UPS_HOST))]
     pub ups_host: String,
     /// Port of the NUT server to monitor
-    #[arg(long, env, default_value_t = 3493)]
+    #[arg(long, env, default_value_t = DEFAULT_UPS_PORT)]
     pub ups_port: u16,
     /// IP address on which the exporter will serve metrics
-    #[arg(long, env, default_value_t = String::from("0.0.0.0"))]
-    pub bind_ip: String,
+    #[arg(long, env, default_value_t = DEFAULT_BIND_IP)]
+    pub bind_ip: IpAddr,
     /// Port on which the exporter will serve metrics
-    #[arg(long, env, default_value_t = 9120)]
+    #[arg(long, env, default_value_t = DEFAULT_BIND_PORT)]
     pub bind_port: u16,
     /// Time in seconds between requests to the NUT server. Must be < 1
-    #[arg(long, env, default_value_t = 10)]
+    #[arg(long, env, default_value_t = DEFAULT_POLL_RATE)]
     pub poll_rate: u64,
-}
-
-/// Configuration for connecting to and polling a NUT server as well as the bind address of a
-/// Prometheus exporter.
-#[derive(Debug)]
-pub struct Config {
-    ups_name: String,
-    ups_host: String,
-    ups_port: u16,
-    bind_addr: SocketAddr,
-    poll_rate: u64,
-    rups_config: rups::Config,
-}
-
-impl Config {
-    /// A builder that creates a configuration by reading config values from the environment
-    /// The following table shows which env vars are read and their default values:
-    ///
-    /// | Parameter   | Description                                                      | Default     |
-    /// |-------------|------------------------------------------------------------------|-------------|
-    /// | `UPS_NAME`  | Name of the UPS to monitor.                                      | `ups`       |
-    /// | `UPS_HOST`  | Hostname of the NUT server to monitor.                           | `127.0.0.1` |
-    /// | `UPS_PORT`  | Port of the NUT server to monitor.                               | `3493`      |
-    /// | `BIND_IP`   | IP address on which the exporter will serve metrics.             | `0.0.0.0`   |
-    /// | `BIND_PORT` | Port on which the exporter will serve metrics.                   | `9120`      |
-    /// | `POLL_RATE` | Time in seconds between requests to the NUT server. Must be < 1. | `10`        |
-    pub fn build() -> Result<Config, &'static str> {
-        let ups_name = env::var("UPS_NAME").unwrap_or_else(|_| DEFAULT_UPS_NAME.into());
-        let ups_host = env::var("UPS_HOST").unwrap_or_else(|_| DEFAULT_UPS_HOST.into());
-        let ups_port = env::var("UPS_PORT")
-            .and_then(|s| s.parse::<u16>().map_err(|_| env::VarError::NotPresent))
-            .unwrap_or(DEFAULT_UPS_PORT);
-        let bind_ip = env::var("BIND_IP")
-            .and_then(|s| s.parse::<IpAddr>().map_err(|_| env::VarError::NotPresent))
-            .unwrap_or(DEFAULT_BIND_IP);
-        let bind_port = env::var("BIND_PORT")
-            .and_then(|s| s.parse::<u16>().map_err(|_| env::VarError::NotPresent))
-            .unwrap_or(DEFAULT_BIND_PORT);
-        let mut poll_rate = env::var("POLL_RATE")
-            .and_then(|s| s.parse::<u64>().map_err(|_| env::VarError::NotPresent))
-            .unwrap_or(DEFAULT_POLL_RATE);
-        if poll_rate < 2 {
-            warn!("POLL_RATE is too low, increasing to minimum of 2 seconds");
-            poll_rate = 2;
-        }
-        let rups_config = rups::ConfigBuilder::new()
-            .with_host((ups_host.clone(), ups_port).try_into().unwrap_or_default())
-            .with_timeout(Duration::from_secs(poll_rate - 1))
-            .build();
-        let bind_addr = SocketAddr::new(bind_ip, bind_port);
-
-        Ok(Config {
-            ups_name,
-            ups_host,
-            ups_port,
-            bind_addr,
-            poll_rate,
-            rups_config,
-        })
-    }
-
-    /// Returns the full name of the UPS defined in the configuration. The full name uses the
-    /// format of `ups@host:port`.
-    #[must_use]
-    pub fn ups_fullname(&self) -> String {
-        format!("{}@{}:{}", self.ups_name, self.ups_host, self.ups_port)
-    }
-
-    /// Returns the name of the UPS defined in the configuration.
-    #[must_use]
-    pub fn ups_name(&self) -> &str {
-        self.ups_name.as_str()
-    }
-
-    /// Returns the rups configuration which is used to create a connection to the UPS.
-    #[must_use]
-    pub fn rups_config(&self) -> &rups::Config {
-        &self.rups_config
-    }
-
-    /// Returns the rate at which the NUT server will be polled for data, in seconds.
-    #[must_use]
-    pub fn poll_rate(&self) -> &u64 {
-        &self.poll_rate
-    }
-
-    /// Returns the address at which the Prometheus exprter will run.
-    #[must_use]
-    pub fn bind_addr(&self) -> &SocketAddr {
-        &self.bind_addr
-    }
 }
 
 /// A collection of all registered Prometheus metrics, mapped to the name of the UPS variable they represent.

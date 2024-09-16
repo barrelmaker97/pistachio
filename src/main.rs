@@ -2,27 +2,25 @@ use clap::Parser;
 use env_logger::{Builder, Env};
 use log::{debug, error, info, warn};
 use rups::blocking::Connection;
-use std::net::{IpAddr, SocketAddr};
+use std::net::{SocketAddr};
 use std::time::Duration;
 use std::{process, thread, time};
 
 fn main() {
     let args = pistachio::Args::parse();
+    let timeout = if args.poll_rate < 2 {
+        1
+    } else {
+        args.poll_rate - 1
+    };
     let rups_config = rups::ConfigBuilder::new()
         .with_host((args.ups_host.clone(), args.ups_port).try_into().unwrap_or_default())
-        .with_timeout(Duration::from_secs(args.poll_rate - 1))
+        .with_timeout(Duration::from_secs(timeout))
         .build();
-    let bind_ip = args.bind_ip.parse::<IpAddr>().unwrap();
-    let bind_addr = SocketAddr::new(bind_ip, args.bind_port);
 
     // Initialize logging
     Builder::from_env(Env::default().default_filter_or("info")).init();
 
-    // Read config from the environment
-    //let config = pistachio::Config::build().unwrap_or_else(|err| {
-        //error!("Could not load configuration: {err}");
-        //process::exit(1);
-    //});
     info!("UPS to be checked: {}@{}:{}", args.ups_name, args.ups_host, args.ups_port);
     info!("Poll Rate: Every {} seconds", args.poll_rate);
 
@@ -46,6 +44,7 @@ fn main() {
     info!("{} gauges will be exported", metrics.count());
 
     // Start prometheus exporter
+    let bind_addr = SocketAddr::new(args.bind_ip, args.bind_port);
     prometheus_exporter::start(bind_addr).unwrap_or_else(|err| {
         error!("Failed to start prometheus exporter: {err}");
         process::exit(1);
