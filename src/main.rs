@@ -2,17 +2,20 @@ use clap::Parser;
 use env_logger::{Builder, Env};
 use log::{debug, error, info, warn};
 use rups::blocking::Connection;
-use std::net::{SocketAddr};
+use std::net::SocketAddr;
 use std::time::Duration;
 use std::{process, thread, time};
 
 fn main() {
-    let args = pistachio::Args::parse();
-
     // Initialize logging
     Builder::from_env(Env::default().default_filter_or("info")).init();
 
-    info!("UPS {}@{}:{} will be checked every {} seconds", args.ups_name, args.ups_host, args.ups_port, args.poll_rate);
+    // Parse configuration
+    let args = pistachio::Args::parse();
+    info!(
+        "UPS {}@{}:{} will be checked every {} seconds",
+        args.ups_name, args.ups_host, args.ups_port, args.poll_rate
+    );
 
     // Create connection to UPS
     let rups_config = rups::ConfigBuilder::new()
