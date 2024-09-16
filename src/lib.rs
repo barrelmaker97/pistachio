@@ -57,7 +57,7 @@ pub struct Args {
     #[arg(long, env, default_value_t = DEFAULT_BIND_PORT)]
     pub bind_port: u16,
     /// Time in seconds between requests to the NUT server. Must be < 1
-    #[arg(long, env, default_value_t = DEFAULT_POLL_RATE, value_parser = clap::value_parser!(u64).range(1..))]
+    #[arg(long, env, default_value_t = DEFAULT_POLL_RATE, value_parser = clap::value_parser!(u64).range(2..))]
     pub poll_rate: u64,
 }
 

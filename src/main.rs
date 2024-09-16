@@ -8,11 +8,6 @@ use std::{process, thread, time};
 
 fn main() {
     let args = pistachio::Args::parse();
-    let timeout = if args.poll_rate < 2 {
-        1
-    } else {
-        args.poll_rate - 1
-    };
 
     // Initialize logging
     Builder::from_env(Env::default().default_filter_or("info")).init();
@@ -23,7 +18,7 @@ fn main() {
     // Create connection to UPS
     let rups_config = rups::ConfigBuilder::new()
         .with_host((args.ups_host.clone(), args.ups_port).try_into().unwrap_or_default())
-        .with_timeout(Duration::from_secs(timeout))
+        .with_timeout(Duration::from_secs(args.poll_rate - 1))
         .build();
     let mut conn = Connection::new(&rups_config).unwrap_or_else(|err| {
         error!("Failed to connect to the UPS: {err}");
