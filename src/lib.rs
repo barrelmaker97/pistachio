@@ -27,9 +27,7 @@ const STATUSES: &[&str] = &["OL", "OB", "LB", "RB", "CHRG", "DISCHRG", "ALARM", 
 /// An array of possible UPS beeper states
 const BEEPER_STATUSES: &[&str] = &["enabled", "disabled", "muted"];
 
-#[derive(Parser, Debug)]
-#[command(version, about, long_about = None)]
-/// A collection of arguments to be parsed from the command line or environment
+/// A collection of arguments to be parsed from the command line or environment.
 /// The following table shows which env vars are read and their default values:
 ///
 /// | Parameter   | Description                                                      | Default     |
@@ -40,6 +38,8 @@ const BEEPER_STATUSES: &[&str] = &["enabled", "disabled", "muted"];
 /// | `BIND_IP`   | IP address on which the exporter will serve metrics.             | `0.0.0.0`   |
 /// | `BIND_PORT` | Port on which the exporter will serve metrics.                   | `9120`      |
 /// | `POLL_RATE` | Time in seconds between requests to the NUT server. Must be < 1. | `10`        |
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
 pub struct Args {
     /// Name of the UPS to monitor
     #[arg(long, env, default_value_t = String::from(DEFAULT_UPS_NAME))]
@@ -57,7 +57,7 @@ pub struct Args {
     #[arg(long, env, default_value_t = DEFAULT_BIND_PORT)]
     pub bind_port: u16,
     /// Time in seconds between requests to the NUT server. Must be < 1
-    #[arg(long, env, default_value_t = DEFAULT_POLL_RATE)]
+    #[arg(long, env, default_value_t = DEFAULT_POLL_RATE, value_parser = clap::value_parser!(u64).range(1..))]
     pub poll_rate: u64,
 }
 
