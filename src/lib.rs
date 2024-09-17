@@ -109,13 +109,19 @@ impl Metrics {
     }
 }
 
+/// Creates a connection for communicating with the NUT server.
+pub fn create_connection(args: &Args) -> Result<Connection, rups::ClientError> {
+    // Create connection to UPS
+    let rups_host = rups::Host::try_from((args.ups_host.clone(), args.ups_port))?;
+    let rups_config = rups::ConfigBuilder::new().with_host(rups_host).build();
+    Connection::new(&rups_config)
+}
+
 /// Connects to the NUT server to produce a map of all available UPS variables, along with their
 /// values and descriptions.
 pub fn get_ups_vars(args: &Args) -> Result<HashMap<String, (String, String)>, rups::ClientError> {
     // Create connection to UPS
-    let rups_host = rups::Host::try_from((args.ups_host.clone(), args.ups_port))?;
-    let rups_config = rups::ConfigBuilder::new().with_host(rups_host).build();
-    let mut conn = Connection::new(&rups_config)?;
+    let mut conn = create_connection(&args)?;
 
     // Get available vars
     let ups_name = args.ups_name.as_str();

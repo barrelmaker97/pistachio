@@ -1,7 +1,6 @@
 use clap::Parser;
 use env_logger::{Builder, Env};
 use log::{debug, error, info, warn};
-use rups::blocking::Connection;
 use std::net::SocketAddr;
 use std::time::Duration;
 use std::{process, thread};
@@ -38,11 +37,8 @@ fn main() {
     });
 
     // Create connection to UPS
-    let rups_config = rups::ConfigBuilder::new()
-        .with_host((args.ups_host.clone(), args.ups_port).try_into().unwrap_or_default())
-        .build();
-    let mut conn = Connection::new(&rups_config).unwrap_or_else(|err| {
-        error!("Failed to connect to the UPS: {err}");
+    let mut conn = pistachio::create_connection(&args).unwrap_or_else(|err| {
+        error!("Could not connect to the UPS: {err}");
         process::exit(1);
     });
 
