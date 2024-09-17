@@ -1,28 +1,50 @@
 # Pistachio
-**Pistachio** is a Prometheus exporter written in Rust, designed for monitoring UPS devices using Network UPS Tools (NUT).
-
-## Configuration
-Configuration is managed through environment variables, detailed below:
-| Parameter   | Description                                                      | Default     |
-|-------------|------------------------------------------------------------------|-------------|
-| `UPS_NAME`  | Name of the UPS to monitor.                                      | `ups`       |
-| `UPS_HOST`  | Hostname of the NUT server to monitor.                           | `127.0.0.1` |
-| `UPS_PORT`  | Port of the NUT server to monitor.                               | `3493`      |
-| `BIND_IP`   | IP address on which the exporter will serve metrics.             | `0.0.0.0`   |
-| `BIND_PORT` | Port on which the exporter will serve metrics.                   | `9120`      |
-| `RUST_LOG`  | Logging level of the exporter.                                   | `info`      |
-| `POLL_RATE` | Time in seconds between requests to the NUT server. Must be < 1. | `10`        |
+**Pistachio** is a Prometheus exporter designed for monitoring UPS devices using Network UPS Tools (NUT).
 
 ## Features
 
 - **Efficient Monitoring**: Written in Rust for high performance and minimal resource consumption.
 - **Prometheus Integration**: Exposes UPS metrics directly to Prometheus for easy monitoring and alerting.
-- **Configurable**: All settings can be customized via environment variables to suit your deployment needs.
+- **Configurable**: All settings can be customized via command-line or environment variables to suit your deployment needs.
 - **Resilient**: Graceful error handling to ensure consistent operation.
+
+## Configuration
+
+Pistachio can be configured using either command-line options or by setting corresponding environment variables.
+Command-line options take precedence over environment variables.
+Below is a breakdown of the available options:
+
+| Option                    | Description                                                                     | Environment Variable | Default     |
+|---------------------------|---------------------------------------------------------------------------------|----------------------|-------------|
+| `--ups-name <UPS_NAME>`   | Name of the UPS to monitor.                                                     | `UPS_NAME`           | `ups`       |
+| `--ups-host <UPS_HOST>`   | Hostname of the NUT server to monitor.                                          | `UPS_HOST`           | `127.0.0.1` |
+| `--ups-port <UPS_PORT>`   | Port of the NUT server to monitor.                                              | `UPS_PORT`           | `3493`      |
+| `--bind-ip <BIND_IP>`     | IP address on which the exporter will serve metrics.                            | `BIND_IP`            | `0.0.0.0`   |
+| `--bind-port <BIND_PORT>` | Port on which the exporter will serve metrics.                                  | `BIND_PORT`          | `9120`      |
+| `--poll-rate <POLL_RATE>` | Time in seconds between requests to the NUT server. Must be at least 1 second.  | `POLL_RATE`          | `10`        |
+| `-h, --help`              | Print help message                                                              | -                    | -           |
+| `-V, --version`           | Print version information                                                       | -                    | -           |
+
+### Example
+
+To run Pistachio with custom values for `UPS_HOST` and `POLL_RATE`, you can either use the command-line options:
+
+```bash
+pistachio --ups-host 192.168.1.100 --poll-rate 5
+```
+
+Or set the environment variables:
+
+```bash
+export UPS_HOST=192.168.1.100
+export POLL_RATE=5
+pistachio
+```
 
 ## Docker Image
 
-A pre-built Docker image of Pistachio is available on the GitHub Container Registry. This allows you to easily deploy the exporter in any containerized environment.
+A pre-built Docker image of Pistachio is available on the GitHub Container Registry.
+This allows you to easily deploy the exporter in any containerized environment.
 
 ### Pulling the Image
 

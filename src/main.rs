@@ -1,29 +1,28 @@
+use clap::Parser;
 use env_logger::{Builder, Env};
-use log::{debug, error, info, warn};
-use rups::blocking::Connection;
-use std::{process, thread, time};
+use log::{error, info};
+use std::net::SocketAddr;
+use std::process;
 
 fn main() {
     // Initialize logging
     Builder::from_env(Env::default().default_filter_or("info")).init();
-    info!("Exporter started!");
 
-    // Read config from the environment
-    let config = pistachio::Config::build().unwrap_or_else(|err| {
-        error!("Could not load configuration: {err}");
-        process::exit(1);
-    });
-    info!("UPS to be checked: {}", config.ups_fullname());
-    info!("Poll Rate: Every {} seconds", config.poll_rate());
+    // Parse configuration
+    let args = pistachio::Args::parse();
+    info!(
+        "UPS {}@{}:{} will be checked every {} seconds",
+        args.ups_name, args.ups_host, args.ups_port, args.poll_rate
+    );
 
     // Create connection to UPS
-    let mut conn = Connection::new(config.rups_config()).unwrap_or_else(|err| {
-        error!("Failed to connect to the UPS: {err}");
+    let mut conn = pistachio::create_connection(&args).unwrap_or_else(|err| {
+        error!("Could not connect to the UPS: {err}");
         process::exit(1);
     });
 
     // Get list of available UPS vars
-    let ups_vars = pistachio::get_ups_vars(&mut conn, config.ups_name()).unwrap_or_else(|err| {
+    let ups_vars = pistachio::get_ups_vars(&args, &mut conn).unwrap_or_else(|err| {
         error!("Could not get list of available variables from the UPS: {err}");
         process::exit(1);
     });
@@ -36,28 +35,12 @@ fn main() {
     info!("{} gauges will be exported", metrics.count());
 
     // Start prometheus exporter
-    prometheus_exporter::start(*config.bind_addr()).unwrap_or_else(|err| {
+    let bind_addr = SocketAddr::new(args.bind_ip, args.bind_port);
+    prometheus_exporter::start(bind_addr).unwrap_or_else(|err| {
         error!("Failed to start prometheus exporter: {err}");
         process::exit(1);
     });
 
-    // Main loop that polls the NUT server and updates associated gauges
-    loop {
-        debug!("Polling UPS...");
-        match conn.list_vars(config.ups_name()) {
-            Ok(var_list) => {
-                metrics.update(&var_list);
-                debug!("Metrics updated");
-            }
-            Err(err) => {
-                // Log warning and set gauges to 0 to indicate failure
-                warn!("Failed to connect to the UPS: {err}");
-                metrics.reset().unwrap_or_else(|err| {
-                    warn!("Failed to reset gauges to zero: {err}")
-                });
-                debug!("Reset gauges to zero because the UPS was unreachable");
-            }
-        }
-        thread::sleep(time::Duration::from_secs(*config.poll_rate()));
-    }
+    // Run pistachio
+    pistachio::run(&args, &mut conn, &metrics);
 }
