@@ -41,5 +41,6 @@ fn main() {
         process::exit(1);
     });
 
+    // Run pistachio
     pistachio::run(&args, &mut conn, &metrics);
 }

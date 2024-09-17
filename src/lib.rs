@@ -12,8 +12,8 @@ use prometheus_exporter::prometheus::{register_gauge, register_gauge_vec};
 use rups::blocking::Connection;
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr};
-use std::time::Duration;
 use std::thread;
+use std::time::Duration;
 
 /// Default configuration options
 const DEFAULT_UPS_NAME: &str = "ups";
@@ -86,7 +86,7 @@ impl Metrics {
                 if let Ok(value) = var.value().parse::<f64>() {
                     gauge.set(value);
                 } else {
-                    warn!("Failed to update variable {} because the value was not a float", var.name());
+                    warn!("Failed to update gauge {} because the value was not a float", var.name());
                 }
             } else if let Some((label_gauge, states)) = self.label_gauges.get(var.name()) {
                 update_label_gauge(label_gauge, states, &var.value());
@@ -146,7 +146,7 @@ pub fn run(args: &Args, conn: &mut Connection, metrics: &Metrics) {
                 // Log warning and set gauges to 0 to indicate failure
                 warn!("Failed to connect to the UPS: {err}");
                 metrics.reset().unwrap_or_else(|err| {
-                    warn!("Failed to reset gauges to zero: {err}")
+                    warn!("Failed to reset gauges to zero: {err}");
                 });
                 debug!("Reset gauges to zero because the UPS was unreachable");
             }
