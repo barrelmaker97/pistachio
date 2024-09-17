@@ -48,8 +48,8 @@ pub struct Args {
     /// Port on which the exporter will serve metrics. Default is `9120`.
     #[arg(long, env, default_value_t = DEFAULT_BIND_PORT)]
     pub bind_port: u16,
-    /// Time in seconds between requests to the NUT server. Must be at least 2 seconds. Default is `10`.
-    #[arg(long, env, default_value_t = DEFAULT_POLL_RATE, value_parser = clap::value_parser!(u64).range(2..))]
+    /// Time in seconds between requests to the NUT server. Must be at least 1 second. Default is `10`.
+    #[arg(long, env, default_value_t = DEFAULT_POLL_RATE, value_parser = clap::value_parser!(u64).range(1..))]
     pub poll_rate: u64,
 }
 

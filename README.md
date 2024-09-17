@@ -21,7 +21,7 @@ Below is a breakdown of the available options:
 | `--ups-port <UPS_PORT>`   | Port of the NUT server to monitor.                                              | `UPS_PORT`           | `3493`      |
 | `--bind-ip <BIND_IP>`     | IP address on which the exporter will serve metrics.                            | `BIND_IP`            | `0.0.0.0`   |
 | `--bind-port <BIND_PORT>` | Port on which the exporter will serve metrics.                                  | `BIND_PORT`          | `9120`      |
-| `--poll-rate <POLL_RATE>` | Time in seconds between requests to the NUT server. Must be at least 2 seconds. | `POLL_RATE`          | `10`        |
+| `--poll-rate <POLL_RATE>` | Time in seconds between requests to the NUT server. Must be at least 1 second.  | `POLL_RATE`          | `10`        |
 | `-h, --help`              | Print help message                                                              | -                    | -           |
 | `-V, --version`           | Print version information                                                       | -                    | -           |
 
