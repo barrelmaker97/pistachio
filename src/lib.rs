@@ -12,6 +12,8 @@ use prometheus_exporter::prometheus::{register_gauge, register_gauge_vec};
 use rups::blocking::Connection;
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr};
+use std::time::Duration;
+use std::thread;
 
 /// Default configuration options
 const DEFAULT_UPS_NAME: &str = "ups";
@@ -119,10 +121,7 @@ pub fn create_connection(args: &Args) -> Result<Connection, rups::ClientError> {
 
 /// Connects to the NUT server to produce a map of all available UPS variables, along with their
 /// values and descriptions.
-pub fn get_ups_vars(args: &Args) -> Result<HashMap<String, (String, String)>, rups::ClientError> {
-    // Create connection to UPS
-    let mut conn = create_connection(&args)?;
-
+pub fn get_ups_vars(args: &Args, conn: &mut Connection) -> Result<HashMap<String, (String, String)>, rups::ClientError> {
     // Get available vars
     let ups_name = args.ups_name.as_str();
     let available_vars = conn.list_vars(ups_name)?;
@@ -131,8 +130,29 @@ pub fn get_ups_vars(args: &Args) -> Result<HashMap<String, (String, String)>, ru
         let description = conn.get_var_description(ups_name, var.name())?;
         ups_vars.insert(var.name().to_string(), (var.value(), description));
     }
-    conn.close()?;
     Ok(ups_vars)
+}
+
+/// Main loop that polls the NUT server and updates associated gauges
+pub fn run(args: &Args, conn: &mut Connection, metrics: &Metrics) {
+    loop {
+        debug!("Polling UPS...");
+        match conn.list_vars(args.ups_name.as_str()) {
+            Ok(var_list) => {
+                metrics.update(&var_list);
+                debug!("Metrics updated");
+            }
+            Err(err) => {
+                // Log warning and set gauges to 0 to indicate failure
+                warn!("Failed to connect to the UPS: {err}");
+                metrics.reset().unwrap_or_else(|err| {
+                    warn!("Failed to reset gauges to zero: {err}")
+                });
+                debug!("Reset gauges to zero because the UPS was unreachable");
+            }
+        }
+        thread::sleep(Duration::from_secs(args.poll_rate));
+    }
 }
 
 /// Takes a map of UPS variables, values, and descriptions to create Prometheus gauges. Gauges are

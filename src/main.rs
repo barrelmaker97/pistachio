@@ -1,9 +1,8 @@
 use clap::Parser;
 use env_logger::{Builder, Env};
-use log::{debug, error, info, warn};
+use log::{error, info};
 use std::net::SocketAddr;
-use std::time::Duration;
-use std::{process, thread};
+use std::process;
 
 fn main() {
     // Initialize logging
@@ -16,8 +15,14 @@ fn main() {
         args.ups_name, args.ups_host, args.ups_port, args.poll_rate
     );
 
+    // Create connection to UPS
+    let mut conn = pistachio::create_connection(&args).unwrap_or_else(|err| {
+        error!("Could not connect to the UPS: {err}");
+        process::exit(1);
+    });
+
     // Get list of available UPS vars
-    let ups_vars = pistachio::get_ups_vars(&args).unwrap_or_else(|err| {
+    let ups_vars = pistachio::get_ups_vars(&args, &mut conn).unwrap_or_else(|err| {
         error!("Could not get list of available variables from the UPS: {err}");
         process::exit(1);
     });
@@ -36,29 +41,5 @@ fn main() {
         process::exit(1);
     });
 
-    // Create connection to UPS
-    let mut conn = pistachio::create_connection(&args).unwrap_or_else(|err| {
-        error!("Could not connect to the UPS: {err}");
-        process::exit(1);
-    });
-
-    // Main loop that polls the NUT server and updates associated gauges
-    loop {
-        debug!("Polling UPS...");
-        match conn.list_vars(args.ups_name.as_str()) {
-            Ok(var_list) => {
-                metrics.update(&var_list);
-                debug!("Metrics updated");
-            }
-            Err(err) => {
-                // Log warning and set gauges to 0 to indicate failure
-                warn!("Failed to connect to the UPS: {err}");
-                metrics.reset().unwrap_or_else(|err| {
-                    warn!("Failed to reset gauges to zero: {err}")
-                });
-                debug!("Reset gauges to zero because the UPS was unreachable");
-            }
-        }
-        thread::sleep(Duration::from_secs(args.poll_rate));
-    }
+    pistachio::run(&args, &mut conn, &metrics);
 }
