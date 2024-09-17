@@ -212,6 +212,17 @@ mod tests {
     use prometheus_exporter::prometheus::core::Collector;
 
     #[test]
+    fn parse_default_args() {
+        let args = Args::parse();
+        assert_eq!(args.ups_name, DEFAULT_UPS_NAME);
+        assert_eq!(args.ups_host, DEFAULT_UPS_HOST);
+        assert_eq!(args.ups_port, DEFAULT_UPS_PORT);
+        assert_eq!(args.bind_ip, DEFAULT_BIND_IP);
+        assert_eq!(args.bind_port, DEFAULT_BIND_PORT);
+        assert_eq!(args.poll_rate, DEFAULT_POLL_RATE);
+    }
+
+    #[test]
     fn create_basic_gauges_multiple() {
         // Create variable map
         let mut variables = HashMap::new();
