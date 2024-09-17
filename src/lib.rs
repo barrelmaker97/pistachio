@@ -46,7 +46,7 @@ pub struct Args {
     /// Port on which the exporter will serve metrics. Default is `9120`.
     #[arg(long, env, default_value_t = DEFAULT_BIND_PORT)]
     pub bind_port: u16,
-    /// Time in seconds between requests to the NUT server. Must be < 1. Default is `10`.
+    /// Time in seconds between requests to the NUT server. Must be at least 2 seconds. Default is `10`.
     #[arg(long, env, default_value_t = DEFAULT_POLL_RATE, value_parser = clap::value_parser!(u64).range(2..))]
     pub poll_rate: u64,
 }
@@ -111,14 +111,21 @@ impl Metrics {
 
 /// Connects to the NUT server to produce a map of all available UPS variables, along with their
 /// values and descriptions.
-pub fn get_ups_vars(conn: &mut Connection, ups_name: &str) -> Result<HashMap<String, (String, String)>, rups::ClientError> {
+pub fn get_ups_vars(args: &Args) -> Result<HashMap<String, (String, String)>, rups::ClientError> {
+    // Create connection to UPS
+    let rups_host = rups::Host::try_from((args.ups_host.clone(), args.ups_port))?;
+    let rups_config = rups::ConfigBuilder::new().with_host(rups_host).build();
+    let mut conn = Connection::new(&rups_config)?;
+
+    // Get available vars
+    let ups_name = args.ups_name.as_str();
     let available_vars = conn.list_vars(ups_name)?;
     let mut ups_vars = HashMap::new();
     for var in &available_vars {
-        let raw_name = var.name();
-        let description = conn.get_var_description(ups_name, raw_name)?;
-        ups_vars.insert(raw_name.to_string(), (var.value(), description));
+        let description = conn.get_var_description(ups_name, var.name())?;
+        ups_vars.insert(var.name().to_string(), (var.value(), description));
     }
+    conn.close()?;
     Ok(ups_vars)
 }
 

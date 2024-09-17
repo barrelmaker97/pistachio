@@ -17,18 +17,8 @@ fn main() {
         args.ups_name, args.ups_host, args.ups_port, args.poll_rate
     );
 
-    // Create connection to UPS
-    let rups_config = rups::ConfigBuilder::new()
-        .with_host((args.ups_host.clone(), args.ups_port).try_into().unwrap_or_default())
-        .with_timeout(Duration::from_secs(args.poll_rate - 1))
-        .build();
-    let mut conn = Connection::new(&rups_config).unwrap_or_else(|err| {
-        error!("Failed to connect to the UPS: {err}");
-        process::exit(1);
-    });
-
     // Get list of available UPS vars
-    let ups_vars = pistachio::get_ups_vars(&mut conn, args.ups_name.as_str()).unwrap_or_else(|err| {
+    let ups_vars = pistachio::get_ups_vars(&args).unwrap_or_else(|err| {
         error!("Could not get list of available variables from the UPS: {err}");
         process::exit(1);
     });
@@ -44,6 +34,15 @@ fn main() {
     let bind_addr = SocketAddr::new(args.bind_ip, args.bind_port);
     prometheus_exporter::start(bind_addr).unwrap_or_else(|err| {
         error!("Failed to start prometheus exporter: {err}");
+        process::exit(1);
+    });
+
+    // Create connection to UPS
+    let rups_config = rups::ConfigBuilder::new()
+        .with_host((args.ups_host.clone(), args.ups_port).try_into().unwrap_or_default())
+        .build();
+    let mut conn = Connection::new(&rups_config).unwrap_or_else(|err| {
+        error!("Failed to connect to the UPS: {err}");
         process::exit(1);
     });
 
