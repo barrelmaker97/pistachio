@@ -1,11 +1,11 @@
 # Pistachio
-**Pistachio** is a Prometheus exporter written in Rust, designed for monitoring UPS devices using Network UPS Tools (NUT).
+**Pistachio** is a Prometheus exporter designed for monitoring UPS devices using Network UPS Tools (NUT).
 
 ## Features
 
 - **Efficient Monitoring**: Written in Rust for high performance and minimal resource consumption.
 - **Prometheus Integration**: Exposes UPS metrics directly to Prometheus for easy monitoring and alerting.
-- **Configurable**: All settings can be customized via environment variables to suit your deployment needs.
+- **Configurable**: All settings can be customized via command-line or environment variables to suit your deployment needs.
 - **Resilient**: Graceful error handling to ensure consistent operation.
 
 ## Configuration
