@@ -10,15 +10,9 @@
 
 ## Configuration
 
-Pistachio can be configured using both command-line options and environment variables. Below is a breakdown of the available options:
-
-### Usage
-
-```bash
-pistachio [OPTIONS]
-```
-
-### Options
+Pistachio can be configured using either command-line options or by setting corresponding environment variables.
+Command-line options take precedence over environment variables.
+Below is a breakdown of the available options:
 
 | Option                    | Description                                                                     | Environment Variable | Default     |
 |---------------------------|---------------------------------------------------------------------------------|----------------------|-------------|
@@ -30,8 +24,6 @@ pistachio [OPTIONS]
 | `--poll-rate <POLL_RATE>` | Time in seconds between requests to the NUT server. Must be at least 2 seconds. | `POLL_RATE`          | `10`        |
 | `-h, --help`              | Print help message                                                              | -                    | -           |
 | `-V, --version`           | Print version information                                                       | -                    | -           |
-
-You can configure Pistachio using either command-line options or by setting the corresponding environment variables. The environment variable names are shown in the table above.
 
 ### Example
 
@@ -48,8 +40,6 @@ export UPS_HOST=192.168.1.100
 export POLL_RATE=5
 pistachio
 ```
-
-Both methods can be combined for flexibility in configuration.
 
 ## Docker Image
 
