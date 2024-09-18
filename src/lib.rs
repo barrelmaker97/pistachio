@@ -61,7 +61,12 @@ pub struct Metrics {
 }
 
 impl Metrics {
-    /// A builder that creates metrics from a map of variable names, values, and descriptions.
+    /// A builder that creates a Metrics instance from a map of variable names, values, and descriptions.
+    ///
+    /// # Errors
+    ///
+    /// An error will be returned if any of metrics cannot be created and registered with the
+    /// Prometheus expoter, such as if two metrics attempt to use the same name.
     pub fn build(ups_vars: &HashMap<String, (String, String)>) -> Result<Metrics, prometheus::Error> {
         let basic_gauges = create_basic_gauges(ups_vars)?;
         let label_gauges = create_label_gauges()?;
@@ -97,6 +102,10 @@ impl Metrics {
     }
 
     /// Resets all metrics to zero.
+    ///
+    /// # Errors
+    ///
+    /// An error will be returned if any of the metrics to be reset cannot be accessed.
     pub fn reset(&self) -> Result<(), prometheus::Error> {
         for gauge in self.basic_gauges.values() {
             gauge.set(0.0);
@@ -112,6 +121,11 @@ impl Metrics {
 }
 
 /// Creates a connection for communicating with the NUT server.
+///
+/// # Errors
+///
+/// An error will be returned if the UPS host and port in the provided [Args] cannot be used to
+/// create a valid [`rups::Host`].
 pub fn create_connection(args: &Args) -> Result<Connection, rups::ClientError> {
     // Create connection to UPS
     let rups_host = rups::Host::try_from((args.ups_host.clone(), args.ups_port))?;
@@ -121,6 +135,11 @@ pub fn create_connection(args: &Args) -> Result<Connection, rups::ClientError> {
 
 /// Connects to the NUT server to produce a map of all available UPS variables, along with their
 /// values and descriptions.
+///
+/// # Errors
+///
+/// An error will be returned if the list of variables or their descriptions cannot be retrieved
+/// from the NUT server, such as if connection to the server is lost.
 pub fn get_ups_vars(args: &Args, conn: &mut Connection) -> Result<HashMap<String, (String, String)>, rups::ClientError> {
     // Get available vars
     let ups_name = args.ups_name.as_str();
