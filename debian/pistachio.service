@@ -1,0 +1,10 @@
+[Unit]
+Description=Pistachio
+
+[Service]
+Type=simple
+Restart=on-failure
+ExecStart=/usr/bin/pistachio
+
+[Install]
+WantedBy=multi-user.target

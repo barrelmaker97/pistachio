@@ -11,6 +11,11 @@ authors = ["Nolan Cooper <nolancooper97@gmail.com>"]
 [profile.release]
 strip = "symbols"
 
+[package.metadata.deb]
+maintainer-scripts = "debian/"
+systemd-units = { enable = false }
+revision = ""
+
 [dependencies]
 clap = { version = "4.5.17", features = ["derive", "env"] }
 env_logger = "0.11.5"
