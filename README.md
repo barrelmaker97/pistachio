@@ -92,6 +92,37 @@ services:
       - "9120:9120"
 ```
 
+## Debian Package
+
+Using [cargo-deb](https://github.com/kornelski/cargo-deb), a .deb package for Pistachio can be built.
+This package can be used to install and run Pistachio as a systemd service.
+To create, install, and start the service, use the following steps:
+
+1. Install cargo-deb:
+    ```bash
+    cargo install cargo-deb
+    ```
+
+2. Build the Debian package:
+    ```bash
+    cargo deb
+    ```
+
+3. Install the generated package:
+    ```bash
+    sudo dpkg -i target/debian/pistachio_*.deb
+    ```
+
+4. Enable the systemd service:
+    ```bash
+    sudo systemctl enable pistachio
+    ```
+
+The package can be uninstalled by running the following:
+```bash
+sudo dpkg -P pistachio
+```
+
 ## Getting Started
 
 1. Clone the repository:
