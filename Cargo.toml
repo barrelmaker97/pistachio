@@ -8,6 +8,9 @@ repository = "https://github.com/barrelmaker97/pistachio"
 keywords = ["ups", "nut", "prometheus", "exporter", "monitoring"]
 authors = ["Nolan Cooper <nolancooper97@gmail.com>"]
 
+[profile.release]
+strip = "symbols"
+
 [dependencies]
 clap = { version = "4.5.17", features = ["derive", "env"] }
 env_logger = "0.11.5"
