@@ -96,6 +96,25 @@ The package can be uninstalled by running the following:
 sudo dpkg -P pistachio
 ```
 
+## Cross Compiling
+
+To build Pistachio for a different architecture (a Raspberry Pi for example), install the appropriate target and linker:
+```bash
+rustup target add aarch64-unknown-linux-gnu
+sudo apt install gcc-aarch64-linux-gnu
+```
+
+Configure the linker in `~/.cargo/config.toml`:
+```toml
+[target.aarch64-unknown-linux-gnu]
+linker = "aarch64-linux-gnu-gcc"
+```
+
+Specify the target in the build command:
+```bash
+cargo build --target aarch64-unknown-linux-gnu
+```
+
 ## Docker Image
 
 A pre-built Docker image of Pistachio is available on the GitHub Container Registry.
