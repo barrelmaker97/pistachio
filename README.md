@@ -41,6 +41,29 @@ export POLL_RATE=5
 pistachio
 ```
 
+If Pistachio is run as a systemd service, `systemctl edit` can be used to set configuration options.
+Run the following to open up an `override.conf` file in `/etc/systemd/system/pistachio.service.d/`
+```bash
+sudo systemctl edit pistachio.service
+```
+
+In this file, environment variables can be set to configure Pistachio:
+```
+[Service]
+Environment="UPS_HOST=192.168.1.100"
+Environment="POLL_RATE=5"
+```
+
+After saving the file, the service must be restarted for changes to take effect:
+```bash
+sudo systemctl restart pistachio.service
+```
+
+To undo changes made to the configuration, `systemctl revert` can be used:
+```bash
+sudo systemctl revert pistachio.service
+```
+
 ## Building Locally
 
 1. Clone the repository:
@@ -86,9 +109,10 @@ To create, install, and start the service, use the following steps:
     sudo dpkg -i target/debian/pistachio_*.deb
     ```
 
-4. Enable the systemd service:
+4. Enable and start the systemd service:
     ```bash
     sudo systemctl enable pistachio
+    sudo systemctl start pistachio
     ```
 
 The package can be uninstalled by running the following:
