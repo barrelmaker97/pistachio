@@ -41,6 +41,61 @@ export POLL_RATE=5
 pistachio
 ```
 
+## Building Locally
+
+1. Clone the repository:
+    ```bash
+    git clone https://github.com/barrelmaker97/pistachio.git
+    ```
+
+2. Navigate to the project directory:
+    ```bash
+    cd pistachio
+    ```
+
+3. Build the project using Cargo:
+    ```bash
+    cargo build --release
+    ```
+
+4. Run the exporter:
+    ```bash
+    ./target/release/pistachio
+    ```
+
+5. Configure Prometheus to scrape metrics from the exporter at `http://<your_host>:<BIND_PORT>/metrics`.
+
+## Debian Package
+
+Using [cargo-deb](https://github.com/kornelski/cargo-deb), a .deb package for Pistachio can be built.
+This package can be used to install and run Pistachio as a systemd service.
+To create, install, and start the service, use the following steps:
+
+1. Install cargo-deb:
+    ```bash
+    cargo install cargo-deb
+    ```
+
+2. Build the Debian package:
+    ```bash
+    cargo deb
+    ```
+
+3. Install the generated package:
+    ```bash
+    sudo dpkg -i target/debian/pistachio_*.deb
+    ```
+
+4. Enable the systemd service:
+    ```bash
+    sudo systemctl enable pistachio
+    ```
+
+The package can be uninstalled by running the following:
+```bash
+sudo dpkg -P pistachio
+```
+
 ## Docker Image
 
 A pre-built Docker image of Pistachio is available on the GitHub Container Registry.
@@ -91,30 +146,6 @@ services:
     ports:
       - "9120:9120"
 ```
-
-## Getting Started
-
-1. Clone the repository:
-    ```bash
-    git clone https://github.com/barrelmaker97/pistachio.git
-    ```
-
-2. Navigate to the project directory:
-    ```bash
-    cd pistachio
-    ```
-
-3. Build the project using Cargo:
-    ```bash
-    cargo build --release
-    ```
-
-4. Run the exporter:
-    ```bash
-    ./target/release/pistachio
-    ```
-
-5. Configure Prometheus to scrape metrics from the exporter at `http://<your_host>:<BIND_PORT>/metrics`.
 
 # License
 
