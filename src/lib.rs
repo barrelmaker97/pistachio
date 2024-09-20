@@ -5,7 +5,7 @@
 //! Pistachio is a Prometheus exporter written in Rust, designed for monitoring UPS devices using Network UPS Tools (NUT).
 
 use clap::Parser;
-use log::{debug, warn};
+use log::{debug, info, warn};
 use prometheus_exporter::prometheus;
 use prometheus_exporter::prometheus::core::{AtomicF64, GenericGauge, GenericGaugeVec};
 use prometheus_exporter::prometheus::{register_gauge, register_gauge_vec};
@@ -154,12 +154,17 @@ pub fn get_ups_vars(args: &Args, conn: &mut Connection) -> Result<HashMap<String
 
 /// Main loop that polls the NUT server and updates associated gauges
 pub fn run(args: &Args, conn: &mut Connection, metrics: &Metrics) {
+    let mut is_failing = false;
     loop {
         debug!("Polling UPS...");
         match conn.list_vars(args.ups_name.as_str()) {
             Ok(var_list) => {
                 metrics.update(&var_list);
                 debug!("Metrics updated");
+                if is_failing {
+                    info!("Connection with the UPS has been reestablished");
+                    is_failing = false;
+                }
             }
             Err(err) => {
                 // Log warning and set gauges to 0 to indicate failure
@@ -168,6 +173,7 @@ pub fn run(args: &Args, conn: &mut Connection, metrics: &Metrics) {
                     warn!("Failed to reset gauges to zero: {err}");
                 });
                 debug!("Reset gauges to zero because the UPS was unreachable");
+                is_failing = true;
             }
         }
         thread::sleep(Duration::from_secs(args.poll_rate));
