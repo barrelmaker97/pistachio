@@ -1,6 +1,7 @@
 use clap::Parser;
 use env_logger::{Builder, Env};
 use log::{error, info};
+use metrics_exporter_prometheus::PrometheusBuilder;
 use std::net::SocketAddr;
 use std::process;
 
@@ -28,15 +29,12 @@ fn main() {
     });
 
     // Create Prometheus metrics from available ups variables
-    let metrics = pistachio::Metrics::build(&ups_vars).unwrap_or_else(|err| {
-        error!("Could not create prometheus gauges from UPS variables: {err}");
-        process::exit(1);
-    });
+    let metrics = pistachio::Metrics::build(&ups_vars);
     info!("{} gauges will be exported", metrics.count());
 
     // Start prometheus exporter
     let bind_addr = SocketAddr::new(args.bind_ip, args.bind_port);
-    prometheus_exporter::start(bind_addr).unwrap_or_else(|err| {
+    PrometheusBuilder::new().with_http_listener(bind_addr).install().unwrap_or_else(|err| {
         error!("Failed to start prometheus exporter: {err}");
         process::exit(1);
     });

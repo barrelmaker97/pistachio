@@ -6,9 +6,7 @@
 
 use clap::Parser;
 use log::{debug, info, warn};
-use prometheus_exporter::prometheus;
-use prometheus_exporter::prometheus::core::{AtomicF64, GenericGauge, GenericGaugeVec};
-use prometheus_exporter::prometheus::{register_gauge, register_gauge_vec};
+use metrics::{Gauge, gauge, describe_gauge};
 use rups::blocking::Connection;
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr};
@@ -56,8 +54,8 @@ pub struct Args {
 /// A collection of all registered Prometheus metrics, mapped to the name of the UPS variable they represent.
 #[derive(Debug)]
 pub struct Metrics {
-    basic_gauges: HashMap<String, GenericGauge<AtomicF64>>,
-    label_gauges: HashMap<String, (GenericGaugeVec<AtomicF64>, &'static [&'static str])>,
+    basic_gauges: HashMap<String, Gauge>,
+    label_gauges: HashMap<String, &'static [&'static str]>,
 }
 
 impl Metrics {
@@ -67,14 +65,14 @@ impl Metrics {
     ///
     /// An error will be returned if any of metrics cannot be created and registered with the
     /// Prometheus expoter, such as if two metrics attempt to use the same name.
-    pub fn build(ups_vars: &HashMap<String, (String, String)>) -> Result<Metrics, prometheus::Error> {
-        let basic_gauges = create_basic_gauges(ups_vars)?;
-        let label_gauges = create_label_gauges()?;
+    pub fn build(ups_vars: &HashMap<String, (String, String)>) -> Metrics {
+        let basic_gauges = create_basic_gauges(ups_vars);
+        let label_gauges = create_label_gauges();
 
-        Ok(Metrics {
+        Metrics {
             basic_gauges,
             label_gauges,
-        })
+        }
     }
 
     /// Returns the number of all gauges registered.
@@ -93,8 +91,8 @@ impl Metrics {
                 } else {
                     warn!("Failed to update gauge {} because the value was not a float", var.name());
                 }
-            } else if let Some((label_gauge, states)) = self.label_gauges.get(var.name()) {
-                update_label_gauge(label_gauge, states, &var.value());
+            } else if let Some(states) = self.label_gauges.get(var.name()) {
+                update_label_gauge(var.name(), states, &var.value());
             } else {
                 debug!("Variable {} does not have an associated gauge to update", var.name());
             }
@@ -106,17 +104,15 @@ impl Metrics {
     /// # Errors
     ///
     /// An error will be returned if any of the metrics to be reset cannot be accessed.
-    pub fn reset(&self) -> Result<(), prometheus::Error> {
+    pub fn reset(&self) {
         for gauge in self.basic_gauges.values() {
             gauge.set(0.0);
         }
-        for (label_gauge, states) in self.label_gauges.values() {
+        for (gauge_name, states) in &self.label_gauges {
             for state in *states {
-                let gauge = label_gauge.get_metric_with_label_values(&[state])?;
-                gauge.set(0.0);
+                gauge!(gauge_name.to_string(), "status" => state.to_string()).set(0.0);
             }
         }
-        Ok(())
     }
 }
 
@@ -169,9 +165,7 @@ pub fn run(args: &Args, conn: &mut Connection, metrics: &Metrics) {
             Err(err) => {
                 // Log warning and set gauges to 0 to indicate failure
                 warn!("Failed to connect to the UPS: {err}");
-                metrics.reset().unwrap_or_else(|err| {
-                    warn!("Failed to reset gauges to zero: {err}");
-                });
+                metrics.reset();
                 debug!("Reset gauges to zero because the UPS was unreachable");
                 is_failing = true;
             }
@@ -183,50 +177,47 @@ pub fn run(args: &Args, conn: &mut Connection, metrics: &Metrics) {
 /// Takes a map of UPS variables, values, and descriptions to create Prometheus gauges. Gauges are
 /// only created for variables with values that can be parsed as floats, since Prometheus gauges can
 /// only have floats as values.
-fn create_basic_gauges(vars: &HashMap<String, (String, String)>) -> Result<HashMap<String,GenericGauge<AtomicF64>>, prometheus::Error> {
+fn create_basic_gauges(vars: &HashMap<String, (String, String)>) -> HashMap<String,Gauge> {
     let mut gauges = HashMap::new();
     for (raw_name, (_, description)) in vars.iter().filter(|(_, (y, _))| y.parse::<f64>().is_ok()) {
         let mut gauge_name = raw_name.replace('.', "_");
         if !gauge_name.starts_with("ups") {
             gauge_name.insert_str(0, "ups_");
         }
-        let gauge = register_gauge!(gauge_name, description)?;
+        describe_gauge!(gauge_name.clone(), description.clone());
+        let gauge = gauge!(gauge_name);
         gauges.insert(raw_name.to_string(), gauge);
         debug!("Gauge created for variable {raw_name}");
     }
-    Ok(gauges)
+    gauges
 }
 
 /// Creates label gauges in Prometheus for UPS variables that represent a set of potential status.
 /// This currently only includes overall UPS status and beeper status.
-fn create_label_gauges() -> Result<HashMap<String,(GenericGaugeVec<AtomicF64>, &'static [&'static str])>, prometheus::Error> {
+fn create_label_gauges() -> HashMap<String, &'static [&'static str]> {
+    describe_gauge!("ups_status", "UPS Status Code");
+    describe_gauge!("ups_beeper_status", "Beeper Status");
     let mut label_gauges = HashMap::new();
-    let status_gauge = register_gauge_vec!("ups_status", "UPS Status Code", &["status"])?;
-    let beeper_gauge = register_gauge_vec!("ups_beeper_status", "Beeper Status", &["status"])?;
     label_gauges.insert(
         String::from("ups.status"),
-        (status_gauge, STATUSES),
+        STATUSES
     );
     label_gauges.insert(
         String::from("ups.beeper.status"),
-        (beeper_gauge, BEEPER_STATUSES),
+        BEEPER_STATUSES
     );
-    Ok(label_gauges)
+    label_gauges
 }
 
 /// Takes a label gauge, all of it's possible states, and the current value of the variable from
 /// the UPS. Each label of the gauge is updated to reflect all current states present in the
 /// value from the UPS.
-fn update_label_gauge(label_gauge: &GenericGaugeVec<AtomicF64>, states: &[&str], value: &str) {
+fn update_label_gauge(gauge_name: &str, states: &[&str], value: &str) {
     for state in states {
-        if let Ok(gauge) = label_gauge.get_metric_with_label_values(&[state]) {
-            if value.contains(state) {
-                gauge.set(1.0);
-            } else {
-                gauge.set(0.0);
-            }
+        if value.contains(state) {
+            gauge!(gauge_name.to_string(), "status" => state.to_string()).set(1.0);
         } else {
-            warn!("Failed to update label gauge for {} state", state);
+            gauge!(gauge_name.to_string(), "status" => state.to_string()).set(0.0);
         }
     }
 }
