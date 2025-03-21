@@ -28,16 +28,16 @@ fn main() {
         process::exit(1);
     });
 
-    // Create Prometheus metrics from available ups variables
-    let metrics = pistachio::Metrics::build(&ups_vars);
-    info!("{} gauges will be exported", metrics.count());
-
     // Start prometheus exporter
     let bind_addr = SocketAddr::new(args.bind_ip, args.bind_port);
     PrometheusBuilder::new().with_http_listener(bind_addr).install().unwrap_or_else(|err| {
-        error!("Failed to start prometheus exporter: {err}");
+        error!("Failed to create prometheus exporter: {err}");
         process::exit(1);
     });
+
+    // Create Prometheus metrics from available ups variables
+    let metrics = pistachio::Metrics::build(&ups_vars);
+    info!("{} gauges will be exported", metrics.count());
 
     // Run pistachio
     pistachio::run(&args, &mut conn, &metrics);
