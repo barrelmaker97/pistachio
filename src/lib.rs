@@ -6,7 +6,7 @@
 
 use clap::Parser;
 use log::{debug, info, warn};
-use metrics::{Gauge, gauge, describe_gauge};
+use metrics::{gauge, describe_gauge};
 use rups::blocking::Connection;
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr};
@@ -54,7 +54,7 @@ pub struct Args {
 /// A collection of all registered Prometheus metrics, mapped to the name of the UPS variable they represent.
 #[derive(Debug)]
 pub struct Metrics {
-    basic_gauges: HashMap<String, Gauge>,
+    basic_gauges: Vec<String>,
     label_gauges: HashMap<String, &'static [&'static str]>,
 }
 
@@ -84,10 +84,11 @@ impl Metrics {
     /// Takes a list of variable names and values to update all associated Prometheus metrics.
     pub fn update(&self, var_list: &Vec<rups::Variable>) {
         for var in var_list {
-            if let Some(gauge) = self.basic_gauges.get(var.name()) {
+            let gauge_name = convert_var_name(var.name());
+            if self.basic_gauges.contains(&gauge_name) {
                 // Update basic gauges
                 if let Ok(value) = var.value().parse::<f64>() {
-                    gauge.set(value);
+                    gauge!(gauge_name).set(value);
                 } else {
                     warn!("Failed to update gauge {} because the value was not a float", var.name());
                 }
@@ -105,8 +106,8 @@ impl Metrics {
     ///
     /// An error will be returned if any of the metrics to be reset cannot be accessed.
     pub fn reset(&self) {
-        for gauge in self.basic_gauges.values() {
-            gauge.set(0.0);
+        for gauge_name in &self.basic_gauges {
+            gauge!(gauge_name.to_string()).set(0.0);
         }
         for (gauge_name, states) in &self.label_gauges {
             for state in *states {
@@ -177,17 +178,13 @@ pub fn run(args: &Args, conn: &mut Connection, metrics: &Metrics) {
 /// Takes a map of UPS variables, values, and descriptions to create Prometheus gauges. Gauges are
 /// only created for variables with values that can be parsed as floats, since Prometheus gauges can
 /// only have floats as values.
-fn create_basic_gauges(vars: &HashMap<String, (String, String)>) -> HashMap<String,Gauge> {
-    let mut gauges = HashMap::new();
+fn create_basic_gauges(vars: &HashMap<String, (String, String)>) -> Vec<String> {
+    let mut gauges = Vec::new();
     for (raw_name, (_, description)) in vars.iter().filter(|(_, (y, _))| y.parse::<f64>().is_ok()) {
-        let mut gauge_name = raw_name.replace('.', "_");
-        if !gauge_name.starts_with("ups") {
-            gauge_name.insert_str(0, "ups_");
-        }
+        let gauge_name = convert_var_name(raw_name);
         describe_gauge!(gauge_name.clone(), description.clone());
-        let gauge = gauge!(gauge_name);
-        gauges.insert(raw_name.to_string(), gauge);
-        debug!("Gauge created for variable {raw_name}");
+        gauges.push(gauge_name.clone());
+        debug!("Gauge created for variable {gauge_name}");
     }
     gauges
 }
@@ -220,6 +217,14 @@ fn update_label_gauge(gauge_name: &str, states: &[&str], value: &str) {
             gauge!(gauge_name.to_string(), "status" => state.to_string()).set(0.0);
         }
     }
+}
+
+fn convert_var_name(var_name: &str) -> String {
+    let mut gauge_name = var_name.replace('.', "_");
+    if !gauge_name.starts_with("ups") {
+        gauge_name.insert_str(0, "ups_");
+    }
+    gauge_name
 }
 
 #[cfg(test)]
