@@ -6,7 +6,7 @@
 
 use clap::Parser;
 use log::{debug, info, warn};
-use metrics::{gauge, describe_gauge};
+use metrics::{describe_gauge, gauge};
 use rups::blocking::Connection;
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr};
@@ -179,14 +179,16 @@ pub fn run(args: &Args, conn: &mut Connection, metrics: &Metrics) {
 /// only created for variables with values that can be parsed as floats, since Prometheus gauges can
 /// only have floats as values.
 fn create_basic_gauges(vars: &HashMap<String, (String, String)>) -> Vec<String> {
-    let mut gauges = Vec::new();
-    for (raw_name, (_, description)) in vars.iter().filter(|(_, (y, _))| y.parse::<f64>().is_ok()) {
-        let gauge_name = convert_var_name(raw_name);
-        describe_gauge!(gauge_name.clone(), description.clone());
-        gauges.push(gauge_name.clone());
-        debug!("Gauge created for variable {gauge_name}");
-    }
-    gauges
+    vars.iter()
+        .filter_map(|(name, (value, desc))| {
+            value.parse::<f64>().ok().map(|_| {
+                let name = convert_var_name(name);
+                describe_gauge!(name.clone(), desc.clone());
+                debug!("Gauge created for variable {name}");
+                name
+            })
+        })
+        .collect()
 }
 
 /// Creates label gauges in Prometheus for UPS variables that represent a set of potential status.
@@ -195,14 +197,8 @@ fn create_label_gauges() -> HashMap<String, &'static [&'static str]> {
     describe_gauge!("ups_status", "UPS Status Code");
     describe_gauge!("ups_beeper_status", "Beeper Status");
     let mut label_gauges = HashMap::new();
-    label_gauges.insert(
-        String::from("ups.status"),
-        STATUSES
-    );
-    label_gauges.insert(
-        String::from("ups.beeper.status"),
-        BEEPER_STATUSES
-    );
+    label_gauges.insert(String::from("ups.status"), STATUSES);
+    label_gauges.insert(String::from("ups.beeper.status"), BEEPER_STATUSES);
     label_gauges
 }
 
