@@ -110,12 +110,8 @@ impl Metrics {
                     warn!("Failed to update gauge {gauge_name} because the value was not a float");
                 }
             } else if let Some(states) = self.label_gauges.get(&gauge_name) {
-                for state in *states {
-                    if value.contains(state) {
-                        gauge!(gauge_name.to_string(), "status" => state.to_string()).set(1.0);
-                    } else {
-                        gauge!(gauge_name.to_string(), "status" => state.to_string()).set(0.0);
-                    }
+                for (state, is_active) in states.iter().map(|x| (x.to_string(), value.contains(x))) {
+                    gauge!(gauge_name.to_string(), "status" => state).set(is_active as u8);
                 }
             } else {
                 debug!("Variable {gauge_name} does not have an associated gauge to update");
@@ -133,8 +129,8 @@ impl Metrics {
             gauge!(gauge_name.to_string()).set(0.0);
         }
         for (gauge_name, states) in &self.label_gauges {
-            for state in *states {
-                gauge!(gauge_name.to_string(), "status" => state.to_string()).set(0.0);
+            for state in states.iter().map(|x| x.to_string()) {
+                gauge!(gauge_name.to_string(), "status" => state).set(0.0);
             }
         }
     }
