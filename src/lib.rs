@@ -54,7 +54,7 @@ pub struct Args {
 /// A collection of all registered metrics, both labelled and unlabelled.
 #[derive(Debug)]
 pub struct Metrics {
-    basic_gauges: Vec<String>,
+    basic_gauges: HashMap<String, String>,
     label_gauges: HashMap<String, &'static [&'static str]>,
 }
 
@@ -63,27 +63,27 @@ impl Metrics {
     /// Gauges are only registered for variables with values that can be parsed as floats, since
     /// gauges can only have floats as values.
     pub fn build(ups_vars: &HashMap<String, (String, String)>) -> Metrics {
-        let mut basic_gauges: Vec<String> = ups_vars.iter()
+        let basic_gauges = ups_vars.iter()
             .filter_map(|(name, (value, desc))| {
                 value.parse::<f64>().ok().map(|_| {
-                    let name = convert_name(name);
-                    describe_gauge!(name.clone(), desc.clone());
-                    debug!("Gauge {name} has been registered");
-                    name
+                    let mut gauge_name = name.replace('.', "_");
+                    if !gauge_name.starts_with("ups") {
+                        gauge_name.insert_str(0, "ups_");
+                    }
+                    describe_gauge!(gauge_name.clone(), desc.clone());
+                    debug!("Gauge {gauge_name} has been registered");
+                    (name.clone(), gauge_name.clone())
                 })
             })
             .collect();
-
-        // Sort so we can use binary search later on each update
-        basic_gauges.sort_unstable();
 
         // Registers label gauges for UPS variables that represent a set of potential status.
         // This currently only includes overall UPS status and beeper status.
         describe_gauge!("ups_status", "UPS Status Code");
         describe_gauge!("ups_beeper_status", "Beeper Status");
         let mut label_gauges = HashMap::new();
-        label_gauges.insert(String::from("ups_status"), STATUSES);
-        label_gauges.insert(String::from("ups_beeper_status"), BEEPER_STATUSES);
+        label_gauges.insert(String::from("ups.status"), STATUSES);
+        label_gauges.insert(String::from("ups.beeper.status"), BEEPER_STATUSES);
 
         Metrics {
             basic_gauges,
@@ -101,27 +101,27 @@ impl Metrics {
     /// gauges, each label of the gauge is updated to reflect all current states present in the
     /// value from the UPS.
     pub fn update(&self, var_list: &Vec<rups::Variable>) {
-        for (gauge_name, value) in var_list.iter().map(|x| (convert_name(x.name()), x.value())) {
-            if self.basic_gauges.binary_search(&gauge_name).is_ok() {
+        for (name, value) in var_list.iter().map(|x| (x.name().to_string(), x.value())) {
+            if let Some(gauge_name) = self.basic_gauges.get(&name) {
                 // Update basic gauges
                 if let Ok(value) = value.parse::<f64>() {
-                    gauge!(gauge_name).set(value);
+                    gauge!(gauge_name.clone()).set(value);
                 } else {
                     warn!("Failed to update gauge {gauge_name} because the value was not a float");
                 }
-            } else if let Some(states) = self.label_gauges.get(&gauge_name) {
+            } else if let Some(states) = self.label_gauges.get(&name) {
                 for (state, is_active) in states.iter().map(|x| (x.to_string(), value.contains(x))) {
-                    gauge!(gauge_name.to_string(), "status" => state).set(is_active as u8);
+                    gauge!(name.to_string(), "status" => state).set(is_active as u8);
                 }
             } else {
-                debug!("Variable {gauge_name} does not have an associated gauge to update");
+                debug!("Variable {name} does not have an associated gauge to update");
             }
         }
     }
 
     /// Resets all metrics to zero.
     pub fn reset(&self) {
-        for gauge_name in &self.basic_gauges {
+        for gauge_name in self.basic_gauges.values() {
             gauge!(gauge_name.to_string()).set(0.0);
         }
         for (gauge_name, states) in &self.label_gauges {
@@ -188,14 +188,6 @@ pub fn run(args: &Args, conn: &mut Connection, metrics: &Metrics) {
         }
         thread::sleep(Duration::from_secs(args.poll_rate));
     }
-}
-
-fn convert_name(var_name: &str) -> String {
-    let mut gauge_name = var_name.replace('.', "_");
-    if !gauge_name.starts_with("ups") {
-        gauge_name.insert_str(0, "ups_");
-    }
-    gauge_name
 }
 
 #[cfg(test)]
