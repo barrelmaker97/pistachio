@@ -66,7 +66,7 @@ impl Metrics {
         let basic_gauges = ups_vars.iter()
             .filter_map(|(name, (value, desc))| {
                 value.parse::<f64>().ok().map(|_| {
-                    let name = convert_var_name(name);
+                    let name = convert_name(name);
                     describe_gauge!(name.clone(), desc.clone());
                     debug!("Gauge {name} has been registered");
                     name
@@ -98,25 +98,24 @@ impl Metrics {
     /// gauges, each label of the gauge is updated to reflect all current states present in the
     /// value from the UPS.
     pub fn update(&self, var_list: &Vec<rups::Variable>) {
-        for var in var_list {
-            let gauge_name = convert_var_name(var.name());
+        for (gauge_name, value) in var_list.iter().map(|x| (convert_name(x.name()), x.value())) {
             if self.basic_gauges.contains(&gauge_name) {
                 // Update basic gauges
-                if let Ok(value) = var.value().parse::<f64>() {
+                if let Ok(value) = value.parse::<f64>() {
                     gauge!(gauge_name).set(value);
                 } else {
                     warn!("Failed to update gauge {gauge_name} because the value was not a float");
                 }
             } else if let Some(states) = self.label_gauges.get(&gauge_name) {
                 for state in *states {
-                    if var.value().contains(state) {
+                    if value.contains(state) {
                         gauge!(gauge_name.to_string(), "status" => state.to_string()).set(1.0);
                     } else {
                         gauge!(gauge_name.to_string(), "status" => state.to_string()).set(0.0);
                     }
                 }
             } else {
-                debug!("Variable {} does not have an associated gauge to update", var.name());
+                debug!("Variable {gauge_name} does not have an associated gauge to update");
             }
         }
     }
@@ -196,7 +195,7 @@ pub fn run(args: &Args, conn: &mut Connection, metrics: &Metrics) {
     }
 }
 
-fn convert_var_name(var_name: &str) -> String {
+fn convert_name(var_name: &str) -> String {
     let mut gauge_name = var_name.replace('.', "_");
     if !gauge_name.starts_with("ups") {
         gauge_name.insert_str(0, "ups_");
