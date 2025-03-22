@@ -55,7 +55,7 @@ pub struct Args {
 #[derive(Debug)]
 pub struct Metrics {
     basic_gauges: HashMap<String, String>,
-    label_gauges: HashMap<String, &'static [&'static str]>,
+    label_gauges: HashMap<String, (String, &'static [&'static str])>,
 }
 
 impl Metrics {
@@ -82,8 +82,14 @@ impl Metrics {
         describe_gauge!("ups_status", "UPS Status Code");
         describe_gauge!("ups_beeper_status", "Beeper Status");
         let mut label_gauges = HashMap::new();
-        label_gauges.insert(String::from("ups.status"), STATUSES);
-        label_gauges.insert(String::from("ups.beeper.status"), BEEPER_STATUSES);
+        label_gauges.insert(
+            String::from("ups.status"),
+            (String::from("ups_status"), STATUSES)
+        );
+        label_gauges.insert(
+            String::from("ups.beeper.status"),
+            (String::from("ups_beeper_status"), BEEPER_STATUSES)
+        );
 
         Metrics {
             basic_gauges,
@@ -101,20 +107,21 @@ impl Metrics {
     /// gauges, each label of the gauge is updated to reflect all current states present in the
     /// value from the UPS.
     pub fn update(&self, var_list: &Vec<rups::Variable>) {
-        for (name, value) in var_list.iter().map(|x| (x.name().to_string(), x.value())) {
-            if let Some(gauge_name) = self.basic_gauges.get(&name) {
+        for var in var_list {
+            if let Some(gauge_name) = self.basic_gauges.get(var.name()) {
                 // Update basic gauges
-                if let Ok(value) = value.parse::<f64>() {
+                if let Ok(value) = var.value().parse::<f64>() {
                     gauge!(gauge_name.clone()).set(value);
                 } else {
                     warn!("Failed to update gauge {gauge_name} because the value was not a float");
                 }
-            } else if let Some(states) = self.label_gauges.get(&name) {
-                for (state, is_active) in states.iter().map(|x| (x.to_string(), value.contains(x))) {
-                    gauge!(name.to_string(), "status" => state).set(is_active as u8);
+            } else if let Some((gauge_name, states)) = self.label_gauges.get(var.name()) {
+                // Update label gauges
+                for (state, is_active) in states.iter().map(|x| (x.to_string(), var.value().contains(x))) {
+                    gauge!(gauge_name.to_string(), "status" => state).set(is_active as u8);
                 }
             } else {
-                debug!("Variable {name} does not have an associated gauge to update");
+                debug!("Variable {} does not have an associated gauge to update", var.name());
             }
         }
     }
@@ -124,7 +131,7 @@ impl Metrics {
         for gauge_name in self.basic_gauges.values() {
             gauge!(gauge_name.to_string()).set(0.0);
         }
-        for (gauge_name, states) in &self.label_gauges {
+        for (gauge_name, states) in self.label_gauges.values() {
             for state in states.iter().map(|x| x.to_string()) {
                 gauge!(gauge_name.to_string(), "status" => state).set(0.0);
             }
