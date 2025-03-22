@@ -60,14 +60,27 @@ pub struct Metrics {
 
 impl Metrics {
     /// A builder that creates a Metrics instance from a map of variable names, values, and descriptions.
-    ///
-    /// # Errors
-    ///
-    /// An error will be returned if any of metrics cannot be created and registered with the
-    /// Prometheus expoter, such as if two metrics attempt to use the same name.
+    /// Gauges are only registered for variables with values that can be parsed as floats, since
+    /// Prometheus gauges can only have floats as values.
     pub fn build(ups_vars: &HashMap<String, (String, String)>) -> Metrics {
-        let basic_gauges = create_basic_gauges(ups_vars);
-        let label_gauges = create_label_gauges();
+        let basic_gauges = ups_vars.iter()
+            .filter_map(|(name, (value, desc))| {
+                value.parse::<f64>().ok().map(|_| {
+                    let name = convert_var_name(name);
+                    describe_gauge!(name.clone(), desc.clone());
+                    debug!("Gauge {name} has been registered");
+                    name
+                })
+            })
+            .collect();
+
+        // Registers label gauges in Prometheus for UPS variables that represent a set of potential status.
+        // This currently only includes overall UPS status and beeper status.
+        describe_gauge!("ups_status", "UPS Status Code");
+        describe_gauge!("ups_beeper_status", "Beeper Status");
+        let mut label_gauges = HashMap::new();
+        label_gauges.insert(String::from("ups.status"), STATUSES);
+        label_gauges.insert(String::from("ups.beeper.status"), BEEPER_STATUSES);
 
         Metrics {
             basic_gauges,
@@ -173,33 +186,6 @@ pub fn run(args: &Args, conn: &mut Connection, metrics: &Metrics) {
         }
         thread::sleep(Duration::from_secs(args.poll_rate));
     }
-}
-
-/// Takes a map of UPS variables, values, and descriptions to create Prometheus gauges. Gauges are
-/// only created for variables with values that can be parsed as floats, since Prometheus gauges can
-/// only have floats as values.
-fn create_basic_gauges(vars: &HashMap<String, (String, String)>) -> Vec<String> {
-    vars.iter()
-        .filter_map(|(name, (value, desc))| {
-            value.parse::<f64>().ok().map(|_| {
-                let name = convert_var_name(name);
-                describe_gauge!(name.clone(), desc.clone());
-                debug!("Gauge created for variable {name}");
-                name
-            })
-        })
-        .collect()
-}
-
-/// Creates label gauges in Prometheus for UPS variables that represent a set of potential status.
-/// This currently only includes overall UPS status and beeper status.
-fn create_label_gauges() -> HashMap<String, &'static [&'static str]> {
-    describe_gauge!("ups_status", "UPS Status Code");
-    describe_gauge!("ups_beeper_status", "Beeper Status");
-    let mut label_gauges = HashMap::new();
-    label_gauges.insert(String::from("ups.status"), STATUSES);
-    label_gauges.insert(String::from("ups.beeper.status"), BEEPER_STATUSES);
-    label_gauges
 }
 
 /// Takes a label gauge, all of it's possible states, and the current value of the variable from
