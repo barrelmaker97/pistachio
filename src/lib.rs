@@ -63,7 +63,7 @@ impl Metrics {
     /// Gauges are only registered for variables with values that can be parsed as floats, since
     /// Prometheus gauges can only have floats as values.
     pub fn build(ups_vars: &HashMap<String, (String, String)>) -> Metrics {
-        let basic_gauges = ups_vars.iter()
+        let mut basic_gauges: Vec<String> = ups_vars.iter()
             .filter_map(|(name, (value, desc))| {
                 value.parse::<f64>().ok().map(|_| {
                     let name = convert_name(name);
@@ -73,6 +73,9 @@ impl Metrics {
                 })
             })
             .collect();
+
+        // Sort so we can use binary search later on each update
+        basic_gauges.sort_unstable();
 
         // Registers label gauges in Prometheus for UPS variables that represent a set of potential status.
         // This currently only includes overall UPS status and beeper status.
@@ -99,7 +102,7 @@ impl Metrics {
     /// value from the UPS.
     pub fn update(&self, var_list: &Vec<rups::Variable>) {
         for (gauge_name, value) in var_list.iter().map(|x| (convert_name(x.name()), x.value())) {
-            if self.basic_gauges.contains(&gauge_name) {
+            if self.basic_gauges.binary_search(&gauge_name).is_ok() {
                 // Update basic gauges
                 if let Ok(value) = value.parse::<f64>() {
                     gauge!(gauge_name).set(value);
