@@ -79,8 +79,8 @@ impl Metrics {
         describe_gauge!("ups_status", "UPS Status Code");
         describe_gauge!("ups_beeper_status", "Beeper Status");
         let mut label_gauges = HashMap::new();
-        label_gauges.insert(String::from("ups.status"), STATUSES);
-        label_gauges.insert(String::from("ups.beeper.status"), BEEPER_STATUSES);
+        label_gauges.insert(String::from("ups_status"), STATUSES);
+        label_gauges.insert(String::from("ups_beeper_status"), BEEPER_STATUSES);
 
         Metrics {
             basic_gauges,
@@ -94,7 +94,9 @@ impl Metrics {
         self.basic_gauges.len() + self.label_gauges.len()
     }
 
-    /// Takes a list of variable names and values to update all associated Prometheus metrics.
+    /// Takes a list of variable names and values to update all associated gauges. For label
+    /// gauges, each label of the gauge is updated to reflect all current states present in the
+    /// value from the UPS.
     pub fn update(&self, var_list: &Vec<rups::Variable>) {
         for var in var_list {
             let gauge_name = convert_var_name(var.name());
@@ -103,10 +105,16 @@ impl Metrics {
                 if let Ok(value) = var.value().parse::<f64>() {
                     gauge!(gauge_name).set(value);
                 } else {
-                    warn!("Failed to update gauge {} because the value was not a float", var.name());
+                    warn!("Failed to update gauge {gauge_name} because the value was not a float");
                 }
-            } else if let Some(states) = self.label_gauges.get(var.name()) {
-                update_label_gauge(var.name(), states, &var.value());
+            } else if let Some(states) = self.label_gauges.get(&gauge_name) {
+                for state in *states {
+                    if var.value().contains(state) {
+                        gauge!(gauge_name.to_string(), "status" => state.to_string()).set(1.0);
+                    } else {
+                        gauge!(gauge_name.to_string(), "status" => state.to_string()).set(0.0);
+                    }
+                }
             } else {
                 debug!("Variable {} does not have an associated gauge to update", var.name());
             }
@@ -185,19 +193,6 @@ pub fn run(args: &Args, conn: &mut Connection, metrics: &Metrics) {
             }
         }
         thread::sleep(Duration::from_secs(args.poll_rate));
-    }
-}
-
-/// Takes a label gauge, all of it's possible states, and the current value of the variable from
-/// the UPS. Each label of the gauge is updated to reflect all current states present in the
-/// value from the UPS.
-fn update_label_gauge(gauge_name: &str, states: &[&str], value: &str) {
-    for state in states {
-        if value.contains(state) {
-            gauge!(gauge_name.to_string(), "status" => state.to_string()).set(1.0);
-        } else {
-            gauge!(gauge_name.to_string(), "status" => state.to_string()).set(0.0);
-        }
     }
 }
 
