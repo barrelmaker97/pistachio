@@ -22,10 +22,13 @@ const DEFAULT_BIND_PORT: u16 = 9120;
 const DEFAULT_POLL_RATE: u64 = 10;
 
 /// An array of possible UPS system states
-const STATUSES: &[&str] = &["OL", "OB", "LB", "RB", "CHRG", "DISCHRG", "ALARM", "OVER", "TRIM", "BOOST", "BYPASS", "OFF", "CAL", "TEST", "FSD"];
+const UPS_STATES: &[&str] = &["OL", "OB", "LB", "RB", "CHRG", "DISCHRG", "ALARM", "OVER", "TRIM", "BOOST", "BYPASS", "OFF", "CAL", "TEST", "FSD"];
 
 /// An array of possible UPS beeper states
-const BEEPER_STATUSES: &[&str] = &["enabled", "disabled", "muted"];
+const BEEPER_STATES: &[&str] = &["enabled", "disabled", "muted"];
+
+/// An array of possible UPS beeper states
+const STATUS_VARS: &[(&str, &str, &[&str])] = &[("ups.status", "UPS Status Code", UPS_STATES), ("ups.beeper.status", "Beeper Status", BEEPER_STATES)];
 
 /// A collection of arguments to be parsed from the command line or environment.
 #[derive(Parser, Debug)]
@@ -66,11 +69,8 @@ impl Metrics {
         let basic_gauges = ups_vars.iter()
             .filter_map(|(name, (value, desc))| {
                 value.parse::<f64>().ok().map(|_| {
-                    let mut gauge_name = name.replace('.', "_");
-                    if !gauge_name.starts_with("ups") {
-                        gauge_name.insert_str(0, "ups_");
-                    }
-                    describe_gauge!(gauge_name.clone(), desc.clone());
+                    let gauge_name = convert_var_name(name);
+                    describe_gauge!(gauge_name.clone(), desc.to_string());
                     debug!("Gauge {gauge_name} has been registered");
                     (name.clone(), gauge_name.clone())
                 })
@@ -79,17 +79,13 @@ impl Metrics {
 
         // Registers label gauges for UPS variables that represent a set of potential status.
         // This currently only includes overall UPS status and beeper status.
-        describe_gauge!("ups_status", "UPS Status Code");
-        describe_gauge!("ups_beeper_status", "Beeper Status");
-        let mut label_gauges = HashMap::new();
-        label_gauges.insert(
-            String::from("ups.status"),
-            (String::from("ups_status"), STATUSES)
-        );
-        label_gauges.insert(
-            String::from("ups.beeper.status"),
-            (String::from("ups_beeper_status"), BEEPER_STATUSES)
-        );
+        let label_gauges = STATUS_VARS.iter()
+            .map(|(name, desc, states)| {
+                let gauge_name = convert_var_name(name);
+                describe_gauge!(gauge_name.clone(), desc.to_string());
+                (name.to_string(), (gauge_name.clone(), *states))
+            })
+            .collect();
 
         Metrics {
             basic_gauges,
@@ -195,6 +191,14 @@ pub fn run(args: &Args, conn: &mut Connection, metrics: &Metrics) {
         }
         thread::sleep(Duration::from_secs(args.poll_rate));
     }
+}
+
+fn convert_var_name(name: &str) -> String {
+    let mut gauge_name = name.replace('.', "_");
+    if !gauge_name.starts_with("ups") {
+        gauge_name.insert_str(0, "ups_");
+    }
+    gauge_name
 }
 
 #[cfg(test)]
