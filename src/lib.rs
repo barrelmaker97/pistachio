@@ -51,7 +51,7 @@ pub struct Args {
     pub poll_rate: u64,
 }
 
-/// A collection of all registered Prometheus metrics, mapped to the name of the UPS variable they represent.
+/// A collection of all registered metrics, both labelled and unlabelled.
 #[derive(Debug)]
 pub struct Metrics {
     basic_gauges: Vec<String>,
@@ -61,7 +61,7 @@ pub struct Metrics {
 impl Metrics {
     /// A builder that creates a Metrics instance from a map of variable names, values, and descriptions.
     /// Gauges are only registered for variables with values that can be parsed as floats, since
-    /// Prometheus gauges can only have floats as values.
+    /// gauges can only have floats as values.
     pub fn build(ups_vars: &HashMap<String, (String, String)>) -> Metrics {
         let mut basic_gauges: Vec<String> = ups_vars.iter()
             .filter_map(|(name, (value, desc))| {
@@ -77,7 +77,7 @@ impl Metrics {
         // Sort so we can use binary search later on each update
         basic_gauges.sort_unstable();
 
-        // Registers label gauges in Prometheus for UPS variables that represent a set of potential status.
+        // Registers label gauges for UPS variables that represent a set of potential status.
         // This currently only includes overall UPS status and beeper status.
         describe_gauge!("ups_status", "UPS Status Code");
         describe_gauge!("ups_beeper_status", "Beeper Status");
@@ -120,10 +120,6 @@ impl Metrics {
     }
 
     /// Resets all metrics to zero.
-    ///
-    /// # Errors
-    ///
-    /// An error will be returned if any of the metrics to be reset cannot be accessed.
     pub fn reset(&self) {
         for gauge_name in &self.basic_gauges {
             gauge!(gauge_name.to_string()).set(0.0);
