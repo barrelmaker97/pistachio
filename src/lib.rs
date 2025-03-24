@@ -215,4 +215,50 @@ mod tests {
         assert_eq!(args.bind_port, DEFAULT_BIND_PORT);
         assert_eq!(args.poll_rate, DEFAULT_POLL_RATE);
     }
+
+    #[test]
+    fn build_metrics_basic() {
+        let mut ups_vars = HashMap::new();
+        let var_name = "input.voltage";
+        ups_vars.insert(var_name.to_string(), (String::from("122.0"), String::from("Nominal input voltage")));
+        let expected_metric_name = convert_var_name(var_name);
+
+        let metrics = Metrics::build(&ups_vars);
+
+        assert_eq!(metrics.count(), 3);
+        assert_eq!(metrics.basic_gauges.len(), 1);
+        assert_eq!(*metrics.basic_gauges.get(var_name).unwrap(), expected_metric_name);
+    }
+
+    #[test]
+    fn build_metrics_not_float() {
+        let mut ups_vars = HashMap::new();
+        let var_name = "ups.mfr";
+        ups_vars.insert(var_name.to_string(), (String::from("CPS"), String::from("UPS Manufacturer")));
+
+        let metrics = Metrics::build(&ups_vars);
+
+        assert_eq!(metrics.count(), 2);
+        assert_eq!(metrics.basic_gauges.len(), 0);
+    }
+
+    #[test]
+    fn convert_var_add() {
+        let var_name = "input.voltage";
+        let expected_metric_name = "ups_input_voltage";
+
+        let metric_name = convert_var_name(var_name);
+
+        assert_eq!(metric_name, expected_metric_name);
+    }
+
+    #[test]
+    fn convert_var_do_not_add() {
+        let var_name = "ups.load";
+        let expected_metric_name = "ups_load";
+
+        let metric_name = convert_var_name(var_name);
+
+        assert_eq!(metric_name, expected_metric_name);
+    }
 }
