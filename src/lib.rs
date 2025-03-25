@@ -65,6 +65,7 @@ impl Metrics {
     /// A builder that creates a Metrics instance from a map of variable names, values, and descriptions.
     /// Gauges are only registered for variables with values that can be parsed as floats, since
     /// gauges can only have floats as values.
+    #[must_use]
     pub fn build(ups_vars: &HashMap<String, (String, String)>) -> Metrics {
         let basic_gauges = ups_vars.iter()
             .filter_map(|(name, (value, desc))| {
@@ -84,7 +85,7 @@ impl Metrics {
                 let gauge_name = convert_var_name(name);
                 describe_gauge!(gauge_name.clone(), *desc);
                 debug!("Gauge {gauge_name} has been registered for var {name}");
-                (name.to_string(), (gauge_name.clone(), *states))
+                ((*name).to_string(), (gauge_name.clone(), *states))
             })
             .collect();
 
@@ -114,8 +115,8 @@ impl Metrics {
                 }
             } else if let Some((gauge_name, states)) = self.label_gauges.get(var.name()) {
                 // Update label gauges
-                for (state, is_active) in states.iter().map(|x| (x.to_string(), var.value().contains(x))) {
-                    gauge!(gauge_name.clone(), "status" => state).set(is_active as u8);
+                for (state, is_active) in states.iter().map(|x| ((*x).to_string(), var.value().contains(x))) {
+                    gauge!(gauge_name.clone(), "status" => state).set(u8::from(is_active));
                 }
             } else {
                 debug!("Variable {} does not have an associated gauge to update", var.name());
@@ -129,7 +130,7 @@ impl Metrics {
             gauge!(gauge_name.clone()).set(0.0);
         }
         for (gauge_name, states) in self.label_gauges.values() {
-            for state in states.iter().map(|x| x.to_string()) {
+            for state in states.iter().map(|x| (*x).to_string()) {
                 gauge!(gauge_name.clone(), "status" => state).set(0.0);
             }
         }
