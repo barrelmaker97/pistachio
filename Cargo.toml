@@ -1,6 +1,6 @@
 [package]
 name = "pistachio"
-version = "0.3.1"
+version = "0.4.0"
 edition = "2021"
 description = "A Prometheus exporter designed for monitoring UPS devices using Network UPS Tools (NUT)."
 license = "GPL-3.0-or-later"
