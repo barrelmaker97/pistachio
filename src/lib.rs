@@ -66,14 +66,14 @@ impl Metrics {
     /// Gauges are only registered for variables with values that can be parsed as floats, since
     /// gauges can only have floats as values.
     #[must_use]
-    pub fn build(ups_vars: &HashMap<String, (String, String)>) -> Metrics {
+    pub fn build(ups_vars: &HashMap<String, (String, String)>) -> Self {
         let basic_gauges = ups_vars.iter()
             .filter_map(|(name, (value, desc))| {
                 value.parse::<f64>().ok().map(|_| {
                     let gauge_name = convert_var_name(name);
                     describe_gauge!(gauge_name.clone(), desc.clone());
                     debug!("Gauge {gauge_name} has been registered for var {name}");
-                    (name.clone(), gauge_name.clone())
+                    (name.clone(), gauge_name)
                 })
             })
             .collect();
@@ -85,11 +85,11 @@ impl Metrics {
                 let gauge_name = convert_var_name(name);
                 describe_gauge!(gauge_name.clone(), *desc);
                 debug!("Gauge {gauge_name} has been registered for var {name}");
-                ((*name).to_string(), (gauge_name.clone(), *states))
+                ((*name).to_owned(), (gauge_name, *states))
             })
             .collect();
 
-        Metrics {
+        Self {
             basic_gauges,
             label_gauges,
         }
@@ -115,7 +115,7 @@ impl Metrics {
                 }
             } else if let Some((gauge_name, states)) = self.label_gauges.get(var.name()) {
                 // Update label gauges
-                for (state, is_active) in states.iter().map(|x| ((*x).to_string(), var.value().contains(x))) {
+                for (state, is_active) in states.iter().map(|x| ((*x).to_owned(), var.value().contains(x))) {
                     gauge!(gauge_name.clone(), "status" => state).set(u8::from(is_active));
                 }
             } else {
@@ -130,7 +130,7 @@ impl Metrics {
             gauge!(gauge_name.clone()).set(0.0);
         }
         for (gauge_name, states) in self.label_gauges.values() {
-            for state in states.iter().map(|x| (*x).to_string()) {
+            for state in states.iter().map(|x| (*x).to_owned()) {
                 gauge!(gauge_name.clone(), "status" => state).set(0.0);
             }
         }
@@ -164,13 +164,13 @@ pub fn get_ups_vars(args: &Args, conn: &mut Connection) -> Result<HashMap<String
     let mut ups_vars = HashMap::new();
     for var in &available_vars {
         let description = conn.get_var_description(ups_name, var.name())?;
-        ups_vars.insert(var.name().to_string(), (var.value(), description));
+        ups_vars.insert(var.name().to_owned(), (var.value(), description));
     }
     Ok(ups_vars)
 }
 
 /// Main loop that polls the NUT server and updates associated gauges
-pub fn run(args: &Args, conn: &mut Connection, metrics: &Metrics) {
+pub fn run(args: &Args, conn: &mut Connection, metrics: &Metrics) -> ! {
     let mut is_failing = false;
     loop {
         debug!("Polling UPS...");
