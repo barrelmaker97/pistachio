@@ -70,8 +70,8 @@ impl Metrics {
             .filter_map(|(name, (value, desc))| {
                 value.parse::<f64>().ok().map(|_| {
                     let gauge_name = convert_var_name(name);
-                    describe_gauge!(gauge_name.clone(), desc.to_string());
-                    debug!("Gauge {gauge_name} has been registered");
+                    describe_gauge!(gauge_name.clone(), desc.clone());
+                    debug!("Gauge {gauge_name} has been registered for var {name}");
                     (name.clone(), gauge_name.clone())
                 })
             })
@@ -82,7 +82,8 @@ impl Metrics {
         let label_gauges = STATUS_VARS.iter()
             .map(|(name, desc, states)| {
                 let gauge_name = convert_var_name(name);
-                describe_gauge!(gauge_name.clone(), desc.to_string());
+                describe_gauge!(gauge_name.clone(), *desc);
+                debug!("Gauge {gauge_name} has been registered for var {name}");
                 (name.to_string(), (gauge_name.clone(), *states))
             })
             .collect();
@@ -114,7 +115,7 @@ impl Metrics {
             } else if let Some((gauge_name, states)) = self.label_gauges.get(var.name()) {
                 // Update label gauges
                 for (state, is_active) in states.iter().map(|x| (x.to_string(), var.value().contains(x))) {
-                    gauge!(gauge_name.to_string(), "status" => state).set(is_active as u8);
+                    gauge!(gauge_name.clone(), "status" => state).set(is_active as u8);
                 }
             } else {
                 debug!("Variable {} does not have an associated gauge to update", var.name());
@@ -125,11 +126,11 @@ impl Metrics {
     /// Resets all metrics to zero.
     pub fn reset(&self) {
         for gauge_name in self.basic_gauges.values() {
-            gauge!(gauge_name.to_string()).set(0.0);
+            gauge!(gauge_name.clone()).set(0.0);
         }
         for (gauge_name, states) in self.label_gauges.values() {
             for state in states.iter().map(|x| x.to_string()) {
-                gauge!(gauge_name.to_string(), "status" => state).set(0.0);
+                gauge!(gauge_name.clone(), "status" => state).set(0.0);
             }
         }
     }
