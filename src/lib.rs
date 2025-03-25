@@ -225,7 +225,6 @@ mod tests {
 
         let metrics = Metrics::build(&ups_vars);
 
-        assert_eq!(metrics.count(), 3);
         assert_eq!(metrics.basic_gauges.len(), 1);
         assert_eq!(*metrics.basic_gauges.get(var_name).unwrap(), expected_metric_name);
     }
@@ -238,8 +237,17 @@ mod tests {
 
         let metrics = Metrics::build(&ups_vars);
 
-        assert_eq!(metrics.count(), 2);
         assert_eq!(metrics.basic_gauges.len(), 0);
+    }
+
+    #[test]
+    fn build_metrics_label_gauges() {
+        let ups_vars = HashMap::new();
+
+        let metrics = Metrics::build(&ups_vars);
+
+        assert_eq!(metrics.count(), 2);
+        assert_eq!(metrics.label_gauges.len(), 2);
     }
 
     #[test]
