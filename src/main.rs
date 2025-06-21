@@ -60,6 +60,20 @@ fn main() {
                 metrics.reset();
                 debug!("Reset gauges to zero because the UPS was unreachable");
                 is_failing = true;
+
+                match err {
+                    rups::ClientError::Nut(nut_error) => {
+                        debug!("NUT error");
+                    }
+
+                    rups::ClientError::Io(io_error) => {
+                        debug!("I/O error. Tearing down and recreating connection.");
+                        conn = pistachio::create_connection(&args).unwrap_or_else(|err| {
+                            error!("Failed to recreate connection: {err}");
+                            process::exit(1);
+                        });
+                    }
+                }
             }
         }
         thread::sleep(Duration::from_secs(args.poll_rate));
