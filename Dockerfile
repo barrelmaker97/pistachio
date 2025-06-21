@@ -1,4 +1,4 @@
-FROM rust:1.86-slim AS builder
+FROM rust:1.87-slim AS builder
 WORKDIR /app
 
 # Build dependencies with empty main()
@@ -12,7 +12,7 @@ RUN touch src/main.rs
 RUN cargo build --release
 
 # Copy binary to release image
-FROM debian:12.10-slim
+FROM debian:12.11-slim
 WORKDIR /app
 COPY --from=builder /app/target/release/pistachio .
 CMD ["./pistachio"]
