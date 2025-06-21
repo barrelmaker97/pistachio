@@ -219,16 +219,32 @@ mod tests {
     }
 
     #[test]
+    fn parse_override_args() {
+        let args = Args::parse_from(["pistachio", "--ups-name", "test_ups", "--ups-host", "192.168.1.1", "--ups-port", "1234", "--bind-ip", "10.0.0.1", "--bind-port", "5678", "--poll-rate", "5"]);
+        assert_eq!(args.ups_name, "test_ups");
+        assert_eq!(args.ups_host, "192.168.1.1");
+        assert_eq!(args.ups_port, 1234);
+        assert_eq!(args.bind_ip, IpAddr::V4("10.0.0.1".parse().unwrap()));
+        assert_eq!(args.bind_port, 5678);
+        assert_eq!(args.poll_rate, 5);
+    }
+
+    #[test]
     fn build_metrics_basic() {
         let mut ups_vars = HashMap::new();
-        let var_name = "input.voltage";
-        ups_vars.insert(var_name.to_string(), (String::from("122.0"), String::from("Nominal input voltage")));
-        let expected_metric_name = convert_var_name(var_name);
+        ups_vars.insert("input.voltage".to_string(), (String::from("122.0"), String::from("Nominal input voltage")));
+        ups_vars.insert("ups.load".to_string(), (String::from("25.5"), String::from("UPS load in percent")));
+        ups_vars.insert("battery.charge".to_string(), (String::from("100.0"), String::from("Battery charge in percent")));
+        let expected_metric_name1 = convert_var_name("input.voltage");
+        let expected_metric_name2 = convert_var_name("ups.load");
+        let expected_metric_name3 = convert_var_name("battery.charge");
 
         let metrics = Metrics::build(&ups_vars);
 
-        assert_eq!(metrics.basic_gauges.len(), 1);
-        assert_eq!(*metrics.basic_gauges.get(var_name).unwrap(), expected_metric_name);
+        assert_eq!(metrics.basic_gauges.len(), 3);
+        assert_eq!(*metrics.basic_gauges.get("input.voltage").unwrap(), expected_metric_name1);
+        assert_eq!(*metrics.basic_gauges.get("ups.load").unwrap(), expected_metric_name2);
+        assert_eq!(*metrics.basic_gauges.get("battery.charge").unwrap(), expected_metric_name3);
     }
 
     #[test]
@@ -253,7 +269,7 @@ mod tests {
     }
 
     #[test]
-    fn convert_var_add() {
+    fn convert_var_does_not_have_ups_prefix() {
         let var_name = "input.voltage";
         let expected_metric_name = "ups_input_voltage";
 
@@ -263,9 +279,29 @@ mod tests {
     }
 
     #[test]
-    fn convert_var_do_not_add() {
+    fn convert_var_already_has_ups_prefix() {
         let var_name = "ups.load";
         let expected_metric_name = "ups_load";
+
+        let metric_name = convert_var_name(var_name);
+
+        assert_eq!(metric_name, expected_metric_name);
+    }
+
+   #[test]
+    fn convert_var_multiple_dots() {
+        let var_name = "input.voltage.nominal";
+        let expected_metric_name = "ups_input_voltage_nominal";
+
+        let metric_name = convert_var_name(var_name);
+
+        assert_eq!(metric_name, expected_metric_name);
+    }
+
+    #[test]
+    fn convert_var_empty() {
+        let var_name = "";
+        let expected_metric_name = "ups_";
 
         let metric_name = convert_var_name(var_name);
 
