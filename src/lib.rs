@@ -5,13 +5,11 @@
 //! Pistachio is a Prometheus exporter written in Rust, designed for monitoring UPS devices using Network UPS Tools (NUT).
 
 use clap::Parser;
-use log::{debug, info, warn};
+use log::{debug, warn};
 use metrics::{describe_gauge, gauge};
 use rups::blocking::Connection;
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr};
-use std::thread;
-use std::time::Duration;
 
 /// Default configuration options
 const DEFAULT_UPS_NAME: &str = "ups";
@@ -167,32 +165,6 @@ pub fn get_ups_vars(args: &Args, conn: &mut Connection) -> Result<HashMap<String
         ups_vars.insert(var.name().to_owned(), (var.value(), description));
     }
     Ok(ups_vars)
-}
-
-/// Main loop that polls the NUT server and updates associated gauges
-pub fn run(args: &Args, conn: &mut Connection, metrics: &Metrics) -> ! {
-    let mut is_failing = false;
-    loop {
-        debug!("Polling UPS...");
-        match conn.list_vars(args.ups_name.as_str()) {
-            Ok(var_list) => {
-                metrics.update(&var_list);
-                debug!("Metrics updated");
-                if is_failing {
-                    info!("Connection with the UPS has been reestablished");
-                    is_failing = false;
-                }
-            }
-            Err(err) => {
-                // Log warning and set gauges to 0 to indicate failure
-                warn!("Failed to connect to the UPS: {err}");
-                metrics.reset();
-                debug!("Reset gauges to zero because the UPS was unreachable");
-                is_failing = true;
-            }
-        }
-        thread::sleep(Duration::from_secs(args.poll_rate));
-    }
 }
 
 fn convert_var_name(name: &str) -> String {

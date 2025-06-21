@@ -1,9 +1,11 @@
 use clap::Parser;
 use env_logger::{Builder, Env};
-use log::{error, info};
+use log::{error, info, debug, warn};
 use metrics_exporter_prometheus::PrometheusBuilder;
 use std::net::SocketAddr;
 use std::process;
+use std::thread;
+use std::time::Duration;
 
 fn main() {
     // Initialize logging
@@ -40,5 +42,26 @@ fn main() {
     info!("{} gauges will be exported", metrics.count());
 
     // Run pistachio
-    pistachio::run(&args, &mut conn, &metrics);
+    let mut is_failing = false;
+    loop {
+        debug!("Polling UPS...");
+        match conn.list_vars(args.ups_name.as_str()) {
+            Ok(var_list) => {
+                metrics.update(&var_list);
+                debug!("Metrics updated");
+                if is_failing {
+                    info!("Connection with the UPS has been reestablished");
+                    is_failing = false;
+                }
+            }
+            Err(err) => {
+                // Log warning and set gauges to 0 to indicate failure
+                warn!("Failed to connect to the UPS: {err}");
+                metrics.reset();
+                debug!("Reset gauges to zero because the UPS was unreachable");
+                is_failing = true;
+            }
+        }
+        thread::sleep(Duration::from_secs(args.poll_rate));
+    }
 }
