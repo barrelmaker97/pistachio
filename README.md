@@ -192,7 +192,7 @@ services:
 
 # License
 
-Copyright (c) 2024 Nolan Cooper
+Copyright (c) 2025 Nolan Cooper
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
