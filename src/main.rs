@@ -61,18 +61,16 @@ fn main() {
                 debug!("Reset gauges to zero because the UPS was unreachable");
                 is_failing = true;
 
-                match err {
-                    rups::ClientError::Nut(nut_error) => {
-                        debug!("NUT error");
-                    }
-
-                    rups::ClientError::Io(io_error) => {
-                        debug!("I/O error. Tearing down and recreating connection.");
-                        conn = pistachio::create_connection(&args).unwrap_or_else(|err| {
-                            error!("Failed to recreate connection: {err}");
-                            process::exit(1);
-                        });
-                    }
+                // IO errors can cause the connection to continue failing,
+                // even once the UPS is back online. Recreating the connection
+                // resolves the issue.
+                if let rups::ClientError::Io(_) = err {
+                    debug!("Attempting to recreate connection due to IO error...");
+                    conn = pistachio::create_connection(&args).unwrap_or_else(|err| {
+                        error!("Failed to recreate connection: {err}");
+                        process::exit(1);
+                    });
+                    debug!("Connection recreated successfully");
                 }
             }
         }
