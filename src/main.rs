@@ -41,7 +41,7 @@ fn main() {
     let metrics = pistachio::Metrics::build(&ups_vars);
     info!("{} gauges will be exported", metrics.count());
 
-    // Run pistachio
+    // Main loop that polls the NUT server and updates associated gauges
     let mut is_failing = false;
     loop {
         debug!("Polling UPS...");
