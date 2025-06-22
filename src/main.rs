@@ -1,9 +1,11 @@
 use clap::Parser;
 use env_logger::{Builder, Env};
-use log::{error, info};
+use log::{error, info, debug, warn};
 use metrics_exporter_prometheus::PrometheusBuilder;
 use std::net::SocketAddr;
 use std::process;
+use std::thread;
+use std::time::Duration;
 
 fn main() {
     // Initialize logging
@@ -39,6 +41,39 @@ fn main() {
     let metrics = pistachio::Metrics::build(&ups_vars);
     info!("{} gauges will be exported", metrics.count());
 
-    // Run pistachio
-    pistachio::run(&args, &mut conn, &metrics);
+    // Main loop that polls the NUT server and updates associated gauges
+    let mut is_failing = false;
+    loop {
+        debug!("Polling UPS...");
+        match conn.list_vars(args.ups_name.as_str()) {
+            Ok(var_list) => {
+                metrics.update(&var_list);
+                debug!("Metrics updated");
+                if is_failing {
+                    info!("Connection with the UPS has been reestablished");
+                    is_failing = false;
+                }
+            }
+            Err(err) => {
+                // Log warning and set gauges to 0 to indicate failure
+                warn!("Failed to connect to the UPS: {err}");
+                metrics.reset();
+                debug!("Reset gauges to zero because the UPS was unreachable");
+                is_failing = true;
+
+                // IO errors can cause the connection to continue failing,
+                // even once the UPS is back online. Recreating the connection
+                // resolves the issue.
+                if let rups::ClientError::Io(_) = err {
+                    debug!("Attempting to recreate connection due to IO error...");
+                    conn = pistachio::create_connection(&args).unwrap_or_else(|err| {
+                        error!("Failed to recreate connection: {err}");
+                        process::exit(1);
+                    });
+                    debug!("Connection recreated successfully");
+                }
+            }
+        }
+        thread::sleep(Duration::from_secs(args.poll_rate));
+    }
 }
