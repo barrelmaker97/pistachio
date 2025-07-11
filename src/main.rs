@@ -63,7 +63,6 @@ async fn monitor_ups(
         _ = shutdown_rx => {
             info!("Attempting graceful shutdown");
             conn.close().await.unwrap();
-            return;
         }
     }
 }
@@ -82,7 +81,7 @@ async fn handle_signals(shutdown_tx: oneshot::Sender<()>) {
     };
 
     // Send the shutdown signal
-    if let Err(_) = shutdown_tx.send(()) {
+    if shutdown_tx.send(()).is_err() {
          error!("Failed to send shutdown signal: the receiver may have dropped");
     }
 }
@@ -132,7 +131,7 @@ async fn main() {
     handle_signals(shutdown_tx).await;
 
     if let Err(e) = monitor_task.await {
-        error!("Shutdown was not graceful: {}", e);
+        error!("Shutdown was not graceful: {e}");
     }
 
     info!("Shutdown complete, goodbye");
