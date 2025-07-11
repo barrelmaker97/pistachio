@@ -1,13 +1,13 @@
 use clap::Parser;
 use env_logger::{Builder, Env};
-use log::{error, info, debug, warn};
+use log::{debug, error, info, warn};
 use metrics_exporter_prometheus::PrometheusBuilder;
 use std::net::SocketAddr;
 use std::process;
 use std::time::Duration;
-use tokio::time;
 use tokio::signal::unix::{signal, SignalKind};
 use tokio::sync::oneshot;
+use tokio::time;
 
 async fn monitor_ups(
     mut conn: rups::tokio::Connection,
@@ -82,7 +82,7 @@ async fn handle_signals(shutdown_tx: oneshot::Sender<()>) {
 
     // Send the shutdown signal
     if shutdown_tx.send(()).is_err() {
-         error!("Failed to send shutdown signal: the receiver may have dropped");
+        error!("Failed to send shutdown signal: the receiver may have dropped");
     }
 }
 
