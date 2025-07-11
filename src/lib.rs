@@ -260,7 +260,7 @@ mod tests {
         assert_eq!(metric_name, expected_metric_name);
     }
 
-   #[test]
+    #[test]
     fn convert_var_multiple_dots() {
         let var_name = "input.voltage.nominal";
         let expected_metric_name = "ups_input_voltage_nominal";
