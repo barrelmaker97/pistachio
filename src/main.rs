@@ -7,20 +7,21 @@ use std::process;
 use std::time::Duration;
 use tokio::time;
 use tokio::signal::unix::{signal, SignalKind};
-use tokio::sync::mpsc;
+use tokio::sync::oneshot;
 
 async fn monitor_ups(
     mut conn: rups::tokio::Connection,
     args: pistachio::Args,
     metrics: pistachio::Metrics,
-    mut shutdown_rx: mpsc::Receiver<()>,
+    shutdown_rx: oneshot::Receiver<()>,
 ) {
     let mut is_failing = false;
     let mut interval = time::interval(Duration::from_secs(args.poll_rate));
 
-    loop {
-        tokio::select! {
-            _ = interval.tick() => {
+    tokio::select! {
+        _ = async {
+            loop {
+                interval.tick().await;
                 debug!("Polling UPS...");
                 match conn.list_vars(args.ups_name.as_str()).await {
                     Ok(var_list) => {
@@ -57,17 +58,17 @@ async fn monitor_ups(
                         }
                     }
                 }
-            },
-            _ = shutdown_rx.recv() => {
-                info!("Attempting graceful shutdown");
-                conn.close().await.unwrap();
-                return;
             }
+        } => {},
+        _ = shutdown_rx => {
+            info!("Attempting graceful shutdown");
+            conn.close().await.unwrap();
+            return;
         }
     }
 }
 
-async fn handle_signals(shutdown_tx: mpsc::Sender<()>) {
+async fn handle_signals(shutdown_tx: oneshot::Sender<()>) {
     let mut sigint = signal(SignalKind::interrupt()).unwrap();
     let mut sigterm = signal(SignalKind::terminate()).unwrap();
 
@@ -81,8 +82,8 @@ async fn handle_signals(shutdown_tx: mpsc::Sender<()>) {
     };
 
     // Send the shutdown signal
-    if let Err(e) = shutdown_tx.send(()).await {
-        error!("Failed to send shutdown signal: {}", e);
+    if let Err(_) = shutdown_tx.send(()) {
+         error!("Failed to send shutdown signal: the receiver may have dropped");
     }
 }
 
@@ -122,7 +123,7 @@ async fn main() {
     info!("{} gauges will be exported", metrics.count());
 
     // Create a channel for shutdown signaling
-    let (shutdown_tx, shutdown_rx) = mpsc::channel(1);
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
 
     // Start monitoring
     let monitor_task = tokio::spawn(monitor_ups(conn, args, metrics, shutdown_rx));
