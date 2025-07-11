@@ -7,7 +7,7 @@
 use clap::Parser;
 use log::{debug, warn};
 use metrics::{describe_gauge, gauge};
-use rups::blocking::Connection;
+use rups::tokio::Connection;
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr};
 
@@ -141,11 +141,11 @@ impl Metrics {
 ///
 /// An error will be returned if the UPS host and port in the provided [Args] cannot be used to
 /// create a valid [`rups::Host`].
-pub fn create_connection(args: &Args) -> Result<Connection, rups::ClientError> {
+pub async fn create_connection(args: &Args) -> Result<Connection, rups::ClientError> {
     // Create connection to UPS
     let rups_host = rups::Host::try_from((args.ups_host.clone(), args.ups_port))?;
     let rups_config = rups::ConfigBuilder::new().with_host(rups_host).build();
-    Connection::new(&rups_config)
+    Connection::new(&rups_config).await
 }
 
 /// Connects to the NUT server to produce a map of all available UPS variables, along with their
@@ -155,13 +155,13 @@ pub fn create_connection(args: &Args) -> Result<Connection, rups::ClientError> {
 ///
 /// An error will be returned if the list of variables or their descriptions cannot be retrieved
 /// from the NUT server, such as if connection to the server is lost.
-pub fn get_ups_vars(args: &Args, conn: &mut Connection) -> Result<HashMap<String, (String, String)>, rups::ClientError> {
+pub async fn get_ups_vars(args: &Args, conn: &mut Connection) -> Result<HashMap<String, (String, String)>, rups::ClientError> {
     // Get available vars
     let ups_name = args.ups_name.as_str();
-    let available_vars = conn.list_vars(ups_name)?;
+    let available_vars = conn.list_vars(ups_name).await?;
     let mut ups_vars = HashMap::new();
     for var in &available_vars {
-        let description = conn.get_var_description(ups_name, var.name())?;
+        let description = conn.get_var_description(ups_name, var.name()).await?;
         ups_vars.insert(var.name().to_owned(), (var.value(), description));
     }
     Ok(ups_vars)

@@ -4,10 +4,11 @@ use log::{error, info, debug, warn};
 use metrics_exporter_prometheus::PrometheusBuilder;
 use std::net::SocketAddr;
 use std::process;
-use std::thread;
 use std::time::Duration;
+use tokio::time;
 
-fn main() {
+#[tokio::main]
+async fn main() {
     // Initialize logging
     Builder::from_env(Env::default().default_filter_or("info")).init();
 
@@ -19,13 +20,13 @@ fn main() {
     );
 
     // Create connection to UPS
-    let mut conn = pistachio::create_connection(&args).unwrap_or_else(|err| {
+    let mut conn = pistachio::create_connection(&args).await.unwrap_or_else(|err| {
         error!("Could not connect to the UPS: {err}");
         process::exit(1);
     });
 
     // Get list of available UPS vars
-    let ups_vars = pistachio::get_ups_vars(&args, &mut conn).unwrap_or_else(|err| {
+    let ups_vars = pistachio::get_ups_vars(&args, &mut conn).await.unwrap_or_else(|err| {
         error!("Could not get list of available variables from the UPS: {err}");
         process::exit(1);
     });
@@ -43,9 +44,11 @@ fn main() {
 
     // Main loop that polls the NUT server and updates associated gauges
     let mut is_failing = false;
+    let mut interval = time::interval(Duration::from_secs(args.poll_rate));
     loop {
+        interval.tick().await;
         debug!("Polling UPS...");
-        match conn.list_vars(args.ups_name.as_str()) {
+        match conn.list_vars(args.ups_name.as_str()).await {
             Ok(var_list) => {
                 metrics.update(&var_list);
                 debug!("Metrics updated");
@@ -66,7 +69,7 @@ fn main() {
                 // resolves the issue.
                 if let rups::ClientError::Io(_) = err {
                     debug!("Attempting to recreate connection due to IO error...");
-                    conn = pistachio::create_connection(&args).unwrap_or_else(|err| {
+                    conn = pistachio::create_connection(&args).await.unwrap_or_else(|err| {
                         error!("Failed to recreate connection: {err}");
                         process::exit(1);
                     });
@@ -74,6 +77,5 @@ fn main() {
                 }
             }
         }
-        thread::sleep(Duration::from_secs(args.poll_rate));
     }
 }
