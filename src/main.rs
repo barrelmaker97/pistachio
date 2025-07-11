@@ -6,6 +6,7 @@ use std::net::SocketAddr;
 use std::process;
 use std::time::Duration;
 use tokio::time;
+use tokio::signal::unix::{signal, SignalKind};
 
 #[tokio::main]
 async fn main() {
@@ -45,37 +46,56 @@ async fn main() {
     // Main loop that polls the NUT server and updates associated gauges
     let mut is_failing = false;
     let mut interval = time::interval(Duration::from_secs(args.poll_rate));
-    loop {
-        interval.tick().await;
-        debug!("Polling UPS...");
-        match conn.list_vars(args.ups_name.as_str()).await {
-            Ok(var_list) => {
-                metrics.update(&var_list);
-                debug!("Metrics updated");
-                if is_failing {
-                    info!("Connection with the UPS has been reestablished");
-                    is_failing = false;
-                }
-            }
-            Err(err) => {
-                // Log warning and set gauges to 0 to indicate failure
-                warn!("Failed to connect to the UPS: {err}");
-                metrics.reset();
-                debug!("Reset gauges to zero because the UPS was unreachable");
-                is_failing = true;
 
-                // IO errors can cause the connection to continue failing,
-                // even once the UPS is back online. Recreating the connection
-                // resolves the issue.
-                if let rups::ClientError::Io(_) = err {
-                    debug!("Attempting to recreate connection due to IO error...");
-                    conn = pistachio::create_connection(&args).await.unwrap_or_else(|err| {
-                        error!("Failed to recreate connection: {err}");
-                        process::exit(1);
-                    });
-                    debug!("Connection recreated successfully");
+    // Graceful shutdown handling
+    let mut sigint = signal(SignalKind::interrupt()).unwrap();
+    let mut sigterm = signal(SignalKind::terminate()).unwrap();
+
+    tokio::select! {
+        _ = async {
+            loop {
+                interval.tick().await;
+                debug!("Polling UPS...");
+                match conn.list_vars(args.ups_name.as_str()).await {
+                    Ok(var_list) => {
+                        metrics.update(&var_list);
+                        debug!("Metrics updated");
+                        if is_failing {
+                            info!("Connection with the UPS has been reestablished");
+                            is_failing = false;
+                        }
+                    }
+                    Err(err) => {
+                        // Log warning and set gauges to 0 to indicate failure
+                        warn!("Failed to connect to the UPS: {err}");
+                        metrics.reset();
+                        debug!("Reset gauges to zero because the UPS was unreachable");
+                        is_failing = true;
+
+                        // IO errors can cause the connection to continue failing,
+                        // even once the UPS is back online. Recreating the connection
+                        // resolves the issue.
+                        if let rups::ClientError::Io(_) = err {
+                            debug!("Attempting to recreate connection due to IO error...");
+                            conn = pistachio::create_connection(&args).await.unwrap_or_else(|err| {
+                                error!("Failed to recreate connection: {err}");
+                                process::exit(1);
+                            });
+                            debug!("Connection recreated successfully");
+                        }
+                    }
                 }
             }
+        } => {},
+        _ = sigint.recv() => {
+            info!("Recieved SIGINT, shutting down gracefully...");
+            // Perform any cleanup here (e.g., closing connections, flushing buffers)
+            process::exit(0);
+        }
+        _ = sigterm.recv() => {
+            info!("Recieved SIGTERM, shutting down gracefully...");
+            // Perform any cleanup here (e.g., closing connections, flushing buffers)
+            process::exit(0);
         }
     }
 }
