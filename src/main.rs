@@ -7,61 +7,83 @@ use std::process;
 use std::time::Duration;
 use tokio::time;
 use tokio::signal::unix::{signal, SignalKind};
+use tokio::sync::mpsc;
 
-
-async fn monitor_ups(mut conn: rups::tokio::Connection, args: pistachio::Args, metrics: pistachio::Metrics) {
+async fn monitor_ups(
+    mut conn: rups::tokio::Connection,
+    args: pistachio::Args,
+    metrics: pistachio::Metrics,
+    mut shutdown_rx: mpsc::Receiver<()>,
+) {
     let mut is_failing = false;
     let mut interval = time::interval(Duration::from_secs(args.poll_rate));
 
     loop {
-        interval.tick().await;
-        debug!("Polling UPS...");
-        match conn.list_vars(args.ups_name.as_str()).await {
-            Ok(var_list) => {
-                metrics.update(&var_list);
-                debug!("Metrics updated");
-                if is_failing {
-                    info!("Connection with the UPS has been reestablished");
-                    is_failing = false;
-                }
-            }
-            Err(err) => {
-                // Log warning and set gauges to 0 to indicate failure
-                warn!("Failed to connect to the UPS: {err}");
-                metrics.reset();
-                debug!("Reset gauges to zero because the UPS was unreachable");
-                is_failing = true;
+        tokio::select! {
+            _ = interval.tick() => {
+                debug!("Polling UPS...");
+                match conn.list_vars(args.ups_name.as_str()).await {
+                    Ok(var_list) => {
+                        metrics.update(&var_list);
+                        debug!("Metrics updated");
+                        if is_failing {
+                            info!("Connection with the UPS has been reestablished");
+                            is_failing = false;
+                        }
+                    }
+                    Err(err) => {
+                        // Log warning and set gauges to 0 to indicate failure
+                        warn!("Failed to connect to the UPS: {err}");
+                        metrics.reset();
+                        debug!("Reset gauges to zero because the UPS was unreachable");
+                        is_failing = true;
 
-                // IO errors can cause the connection to continue failing,
-                // even once the UPS is back online. Recreating the connection
-                // resolves the issue
-                if let rups::ClientError::Io(_) = err {
-                    debug!("Attempting to recreate connection due to IO error...");
-                    conn = pistachio::create_connection(&args).await.unwrap_or_else(|err| {
-                        error!("Failed to recreate connection: {err}");
-                        process::exit(1);
-                    });
-                    debug!("Connection recreated successfully");
+                        // IO errors can cause the connection to continue failing,
+                        // even once the UPS is back online. Recreating the connection
+                        // resolves the issue
+                        if let rups::ClientError::Io(_) = err {
+                            debug!("Attempting to recreate connection due to IO error...");
+                            //Creating new connection
+                            match pistachio::create_connection(&args).await {
+                                Ok(new_conn) => {
+                                    conn = new_conn;
+                                    debug!("Connection recreated successfully");
+                                },
+                                Err(err) => {
+                                    error!("Failed to recreate connection: {err}");
+                                    return;
+                                }
+                            };
+                        }
+                    }
                 }
+            },
+            _ = shutdown_rx.recv() => {
+                info!("Attempting graceful shutdown");
+                conn.close().await.unwrap();
+                return;
             }
         }
     }
 }
 
-async fn handle_signals() {
+async fn handle_signals(shutdown_tx: mpsc::Sender<()>) {
     let mut sigint = signal(SignalKind::interrupt()).unwrap();
     let mut sigterm = signal(SignalKind::terminate()).unwrap();
 
     tokio::select! {
         _ = sigint.recv() => {
-            info!("Received SIGINT, shutting down gracefully...");
+            debug!("Received SIGINT, sending shutdown signal");
         }
         _ = sigterm.recv() => {
-            info!("Received SIGTERM, shutting down gracefully...");
+            debug!("Received SIGTERM, sending shutdown signal");
         }
     };
 
-    process::exit(0);
+    // Send the shutdown signal
+    if let Err(e) = shutdown_tx.send(()).await {
+        error!("Failed to send shutdown signal: {}", e);
+    }
 }
 
 #[tokio::main]
@@ -99,8 +121,18 @@ async fn main() {
     let metrics = pistachio::Metrics::build(&ups_vars);
     info!("{} gauges will be exported", metrics.count());
 
-    tokio::select! {
-        _ = monitor_ups(conn, args, metrics) => {},
-        _ = handle_signals() => {},
+    // Create a channel for shutdown signaling
+    let (shutdown_tx, shutdown_rx) = mpsc::channel(1);
+
+    // Start monitoring
+    let monitor_task = tokio::spawn(monitor_ups(conn, args, metrics, shutdown_rx));
+
+    // Start watching for signals
+    handle_signals(shutdown_tx).await;
+
+    if let Err(e) = monitor_task.await {
+        error!("Shutdown was not graceful: {}", e);
     }
+
+    info!("Shutdown complete, goodbye");
 }
