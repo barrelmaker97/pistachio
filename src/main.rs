@@ -52,7 +52,6 @@ async fn monitor_ups(
                                 },
                                 Err(err) => {
                                     error!("Failed to recreate connection: {err}");
-                                    return;
                                 }
                             };
                         }
@@ -124,15 +123,11 @@ async fn main() {
     // Create a channel for shutdown signaling
     let (shutdown_tx, shutdown_rx) = oneshot::channel();
 
-    // Start monitoring
-    let monitor_task = tokio::spawn(monitor_ups(conn, args, metrics, shutdown_rx));
-
     // Start watching for signals
-    handle_signals(shutdown_tx).await;
+    tokio::spawn(handle_signals(shutdown_tx));
 
-    if let Err(e) = monitor_task.await {
-        error!("Shutdown was not graceful: {e}");
-    }
+    // Start monitoring
+    monitor_ups(conn, args, metrics, shutdown_rx).await;
 
     info!("Shutdown complete, goodbye");
 }
