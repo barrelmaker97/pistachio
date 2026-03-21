@@ -53,7 +53,7 @@ async fn monitor_ups(
                                 Err(err) => {
                                     error!("Failed to recreate connection: {err}");
                                 }
-                            };
+                            }
                         }
                     }
                 }
@@ -61,14 +61,16 @@ async fn monitor_ups(
         } => {},
         _ = shutdown_rx => {
             info!("Attempting graceful shutdown");
-            conn.close().await.unwrap();
+            if let Err(e) = conn.close().await {
+                error!("Failed to close connection during shutdown: {e}");
+            }
         }
     }
 }
 
 async fn handle_signals(shutdown_tx: oneshot::Sender<()>) {
-    let mut sigint = signal(SignalKind::interrupt()).unwrap();
-    let mut sigterm = signal(SignalKind::terminate()).unwrap();
+    let mut sigint = signal(SignalKind::interrupt()).expect("Failed to register SIGINT handler");
+    let mut sigterm = signal(SignalKind::terminate()).expect("Failed to register SIGTERM handler");
 
     tokio::select! {
         _ = sigint.recv() => {
@@ -92,10 +94,7 @@ async fn main() {
 
     // Parse configuration
     let args = pistachio::Args::parse();
-    info!(
-        "UPS {}@{}:{} will be checked every {} seconds",
-        args.ups_name, args.ups_host, args.ups_port, args.poll_rate
-    );
+    info!("UPS {}@{}:{} will be checked every {} seconds", args.ups_name, args.ups_host, args.ups_port, args.poll_rate);
 
     // Create connection to UPS
     let mut conn = pistachio::create_connection(&args).await.unwrap_or_else(|err| {

@@ -16,6 +16,27 @@ maintainer-scripts = "debian/"
 systemd-units = { enable = false }
 revision = ""
 
+[lints.rust]
+unsafe_code = "forbid"
+unused_must_use = "deny"
+missing_debug_implementations = "warn"
+unreachable_pub = "warn"
+unused_imports = "warn"
+unused_qualifications = "warn"
+unused_variables = "warn"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+dbg_macro = "deny"
+clone_on_ref_ptr = "warn"
+panic = "warn"
+print_stderr = "warn"
+print_stdout = "warn"
+todo = "warn"
+unwrap_used = "warn"
+
 [dependencies]
 clap = { version = "4.5.17", features = ["derive", "env"] }
 env_logger = "0.11.5"
