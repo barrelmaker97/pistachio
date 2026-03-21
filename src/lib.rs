@@ -20,13 +20,16 @@ const DEFAULT_BIND_PORT: u16 = 9120;
 const DEFAULT_POLL_RATE: u64 = 10;
 
 /// An array of possible UPS system states
-const UPS_STATES: &[&str] = &["OL", "OB", "LB", "RB", "CHRG", "DISCHRG", "ALARM", "OVER", "TRIM", "BOOST", "BYPASS", "OFF", "CAL", "TEST", "FSD"];
+const UPS_STATES: &[&str] = &[
+    "OL", "OB", "LB", "RB", "CHRG", "DISCHRG", "ALARM", "OVER", "TRIM", "BOOST", "BYPASS", "OFF", "CAL", "TEST", "FSD",
+];
 
 /// An array of possible UPS beeper states
 const BEEPER_STATES: &[&str] = &["enabled", "disabled", "muted"];
 
 /// An array of possible UPS beeper states
-const STATUS_VARS: &[(&str, &str, &[&str])] = &[("ups.status", "UPS Status Code", UPS_STATES), ("ups.beeper.status", "Beeper Status", BEEPER_STATES)];
+const STATUS_VARS: &[(&str, &str, &[&str])] =
+    &[("ups.status", "UPS Status Code", UPS_STATES), ("ups.beeper.status", "Beeper Status", BEEPER_STATES)];
 
 /// A collection of arguments to be parsed from the command line or environment.
 #[derive(Parser, Debug)]
@@ -65,7 +68,8 @@ impl Metrics {
     /// gauges can only have floats as values.
     #[must_use]
     pub fn build(ups_vars: &HashMap<String, (String, String)>) -> Self {
-        let basic_gauges = ups_vars.iter()
+        let basic_gauges = ups_vars
+            .iter()
             .filter_map(|(name, (value, desc))| {
                 value.parse::<f64>().ok().map(|_| {
                     let gauge_name = convert_var_name(name);
@@ -78,7 +82,8 @@ impl Metrics {
 
         // Registers label gauges for UPS variables that represent a set of potential status.
         // This currently only includes overall UPS status and beeper status.
-        let label_gauges = STATUS_VARS.iter()
+        let label_gauges = STATUS_VARS
+            .iter()
             .map(|(name, desc, states)| {
                 let gauge_name = convert_var_name(name);
                 describe_gauge!(gauge_name.clone(), *desc);
@@ -87,10 +92,7 @@ impl Metrics {
             })
             .collect();
 
-        Self {
-            basic_gauges,
-            label_gauges,
-        }
+        Self { basic_gauges, label_gauges }
     }
 
     /// Returns the number of all gauges registered.
@@ -155,7 +157,10 @@ pub async fn create_connection(args: &Args) -> Result<Connection, rups::ClientEr
 ///
 /// An error will be returned if the list of variables or their descriptions cannot be retrieved
 /// from the NUT server, such as if connection to the server is lost.
-pub async fn get_ups_vars(args: &Args, conn: &mut Connection) -> Result<HashMap<String, (String, String)>, rups::ClientError> {
+pub async fn get_ups_vars(
+    args: &Args,
+    conn: &mut Connection,
+) -> Result<HashMap<String, (String, String)>, rups::ClientError> {
     // Get available vars
     let ups_name = args.ups_name.as_str();
     let available_vars = conn.list_vars(ups_name).await?;
@@ -192,7 +197,21 @@ mod tests {
 
     #[test]
     fn parse_override_args() {
-        let args = Args::parse_from(["pistachio", "--ups-name", "test_ups", "--ups-host", "192.168.1.1", "--ups-port", "1234", "--bind-ip", "10.0.0.1", "--bind-port", "5678", "--poll-rate", "5"]);
+        let args = Args::parse_from([
+            "pistachio",
+            "--ups-name",
+            "test_ups",
+            "--ups-host",
+            "192.168.1.1",
+            "--ups-port",
+            "1234",
+            "--bind-ip",
+            "10.0.0.1",
+            "--bind-port",
+            "5678",
+            "--poll-rate",
+            "5",
+        ]);
         assert_eq!(args.ups_name, "test_ups");
         assert_eq!(args.ups_host, "192.168.1.1");
         assert_eq!(args.ups_port, 1234);
@@ -206,7 +225,8 @@ mod tests {
         let mut ups_vars = HashMap::new();
         ups_vars.insert("input.voltage".to_string(), (String::from("122.0"), String::from("Nominal input voltage")));
         ups_vars.insert("ups.load".to_string(), (String::from("25.5"), String::from("UPS load in percent")));
-        ups_vars.insert("battery.charge".to_string(), (String::from("100.0"), String::from("Battery charge in percent")));
+        ups_vars
+            .insert("battery.charge".to_string(), (String::from("100.0"), String::from("Battery charge in percent")));
         let expected_metric_name1 = convert_var_name("input.voltage");
         let expected_metric_name2 = convert_var_name("ups.load");
         let expected_metric_name3 = convert_var_name("battery.charge");
