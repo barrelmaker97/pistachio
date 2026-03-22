@@ -64,7 +64,13 @@ To undo changes made to the configuration, `systemctl revert` can be used:
 sudo systemctl revert pistachio.service
 ```
 
-## Building Locally
+## Development
+
+### Prerequisites
+- Rust 1.83+
+- [`just`](https://github.com/casey/just) (task runner)
+
+### Building Locally
 
 1. Clone the repository:
     ```bash
@@ -87,6 +93,23 @@ sudo systemctl revert pistachio.service
     ```
 
 5. Configure Prometheus to scrape metrics from the exporter at `http://<your_host>:<BIND_PORT>/metrics`.
+
+### Testing
+```bash
+just test
+```
+
+### Code Coverage
+```bash
+just coverage       # LCOV report with summary
+just coverage-html  # Browsable HTML report in coverage/
+```
+
+### Available Commands
+Run `just` to see all available recipes:
+```bash
+just
+```
 
 ## Debian Package
 
