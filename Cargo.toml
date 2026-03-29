@@ -39,7 +39,7 @@ unwrap_used = "warn"
 
 [dependencies]
 clap = { version = "4.5.17", features = ["derive", "env"] }
-env_logger = "0.11.5"
+env_logger = "0.11.10"
 log = "0.4.22"
 metrics = "0.24.1"
 metrics-exporter-prometheus = "0.18.1"
