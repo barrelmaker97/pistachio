@@ -44,4 +44,4 @@ log = "0.4.22"
 metrics = "0.24.1"
 metrics-exporter-prometheus = "0.18.1"
 rups = { version = "0.6.1", features = ["async"] }
-tokio = { version = "1.51.0", features = ["macros", "rt", "signal", "sync", "time"] }
+tokio = { version = "1.51.1", features = ["macros", "rt", "signal", "sync", "time"] }
