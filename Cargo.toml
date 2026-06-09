@@ -42,6 +42,6 @@ clap = { version = "4.5.17", features = ["derive", "env"] }
 env_logger = "0.11.10"
 log = "0.4.32"
 metrics = "0.24.6"
-metrics-exporter-prometheus = "0.18.3"
+metrics-exporter-prometheus = { version = "0.18.3", default-features = false, features = ["http-listener"] }
 rups = { version = "0.6.1", features = ["async"] }
 tokio = { version = "1.51.1", features = ["macros", "rt", "signal", "sync", "time"] }
