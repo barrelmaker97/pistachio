@@ -12,7 +12,7 @@ RUN touch src/main.rs
 RUN cargo build --release
 
 # Copy binary to release image
-FROM debian:13.5-slim
+FROM debian:13.6-slim
 WORKDIR /app
 COPY --from=builder /app/target/release/pistachio .
 CMD ["./pistachio"]
