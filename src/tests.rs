@@ -48,12 +48,14 @@ impl FakeNutConn {
         self.write_all(&response).await;
     }
 
-    async fn handle_get_ups_vars(&mut self, ups: &str, vars: &[(&str, &str, &str)]) {
+    async fn handle_get_ups_vars(&mut self, ups: &str, vars: &[(&str, &str, Option<&str>)]) {
         let var_pairs: Vec<(&str, &str)> = vars.iter().map(|(name, val, _)| (*name, *val)).collect();
         self.handle_list_vars(ups, &var_pairs).await;
         for (name, _, desc) in vars {
-            assert_eq!(self.read_line().await, format!("GET DESC {ups} {name}"));
-            self.write_all(&format!("DESC {ups} {name} \"{desc}\"\n")).await;
+            if let Some(desc) = desc {
+                assert_eq!(self.read_line().await, format!("GET DESC {ups} {name}"));
+                self.write_all(&format!("DESC {ups} {name} \"{desc}\"\n")).await;
+            }
         }
     }
 
@@ -72,6 +74,8 @@ fn parse_default_args() {
     assert_eq!(args.bind_ip, DEFAULT_BIND_IP);
     assert_eq!(args.bind_port, DEFAULT_BIND_PORT);
     assert_eq!(args.poll_rate, DEFAULT_POLL_RATE);
+    assert_eq!(args.bind_addr(), SocketAddr::new(DEFAULT_BIND_IP, DEFAULT_BIND_PORT));
+    assert_eq!(args.poll_interval(), Duration::from_secs(10));
 }
 
 #[test]
@@ -92,12 +96,15 @@ fn parse_override_args() {
         "5",
     ])
     .unwrap();
+    let expected_ip = IpAddr::V4("10.0.0.1".parse().unwrap());
     assert_eq!(args.ups_name, "test_ups");
     assert_eq!(args.ups_host, "192.168.1.1");
     assert_eq!(args.ups_port, 1234);
-    assert_eq!(args.bind_ip, IpAddr::V4("10.0.0.1".parse().unwrap()));
+    assert_eq!(args.bind_ip, expected_ip);
     assert_eq!(args.bind_port, 5678);
-    assert_eq!(args.poll_rate, 5);
+    assert_eq!(args.poll_rate, NonZeroU64::new(5).unwrap());
+    assert_eq!(args.bind_addr(), SocketAddr::new(expected_ip, 5678));
+    assert_eq!(args.poll_interval(), Duration::from_secs(5));
 }
 
 #[test]
@@ -121,9 +128,9 @@ fn parse_invalid_ups_port_fails() {
 #[test]
 fn build_metrics_basic() {
     let mut ups_vars = HashMap::new();
-    ups_vars.insert("input.voltage".to_string(), (String::from("122.0"), String::from("Nominal input voltage")));
-    ups_vars.insert("ups.load".to_string(), (String::from("25.5"), String::from("UPS load in percent")));
-    ups_vars.insert("battery.charge".to_string(), (String::from("100.0"), String::from("Battery charge in percent")));
+    ups_vars.insert("input.voltage".to_string(), String::from("Nominal input voltage"));
+    ups_vars.insert("ups.load".to_string(), String::from("UPS load in percent"));
+    ups_vars.insert("battery.charge".to_string(), String::from("Battery charge in percent"));
     let expected_metric_name1 = convert_var_name("input.voltage");
     let expected_metric_name2 = convert_var_name("ups.load");
     let expected_metric_name3 = convert_var_name("battery.charge");
@@ -134,17 +141,6 @@ fn build_metrics_basic() {
     assert_eq!(*metrics.basic_gauges.get("input.voltage").unwrap(), expected_metric_name1);
     assert_eq!(*metrics.basic_gauges.get("ups.load").unwrap(), expected_metric_name2);
     assert_eq!(*metrics.basic_gauges.get("battery.charge").unwrap(), expected_metric_name3);
-}
-
-#[test]
-fn build_metrics_not_float() {
-    let mut ups_vars = HashMap::new();
-    let var_name = "ups.mfr";
-    ups_vars.insert(var_name.to_string(), (String::from("CPS"), String::from("UPS Manufacturer")));
-
-    let metrics = Metrics::build(&ups_vars);
-
-    assert_eq!(metrics.basic_gauges.len(), 0);
 }
 
 #[test]
@@ -203,10 +199,10 @@ fn update_basic_and_label_metrics() {
     let handle = recorder.handle();
 
     let mut ups_vars = HashMap::new();
-    ups_vars.insert("input.voltage".to_string(), ("120.0".to_string(), "Input voltage".to_string()));
-    ups_vars.insert("ups.load".to_string(), ("15.0".to_string(), "UPS load".to_string()));
+    ups_vars.insert("input.voltage".to_string(), "Input voltage".to_string());
+    ups_vars.insert("ups.load".to_string(), "UPS load".to_string());
 
-    let var_list = vec![
+    let var_list = [
         rups::Variable::parse("input.voltage", "122.5".to_string()),
         rups::Variable::parse("ups.load", "30.0".to_string()),
         rups::Variable::parse("ups.status", "OB DISCHRG".to_string()),
@@ -239,12 +235,12 @@ fn update_basic_gauge_ignores_invalid_float() {
     let handle = recorder.handle();
 
     let mut ups_vars = HashMap::new();
-    ups_vars.insert("input.voltage".to_string(), ("120.0".to_string(), "Input voltage".to_string()));
+    ups_vars.insert("input.voltage".to_string(), "Input voltage".to_string());
 
     metrics::with_local_recorder(&recorder, || {
         let metrics = Metrics::build(&ups_vars);
-        metrics.update(&vec![rups::Variable::parse("input.voltage", "121.0".to_string())]);
-        metrics.update(&vec![rups::Variable::parse("input.voltage", "not-a-float".to_string())]);
+        metrics.update(&[rups::Variable::parse("input.voltage", "121.0".to_string())]);
+        metrics.update(&[rups::Variable::parse("input.voltage", "not-a-float".to_string())]);
     });
 
     let rendered = handle.render();
@@ -257,11 +253,11 @@ fn reset_metrics_sets_all_gauges_to_zero() {
     let handle = recorder.handle();
 
     let mut ups_vars = HashMap::new();
-    ups_vars.insert("input.voltage".to_string(), ("120.0".to_string(), "Input voltage".to_string()));
+    ups_vars.insert("input.voltage".to_string(), "Input voltage".to_string());
 
     metrics::with_local_recorder(&recorder, || {
         let metrics = Metrics::build(&ups_vars);
-        metrics.update(&vec![
+        metrics.update(&[
             rups::Variable::parse("input.voltage", "122.0".to_string()),
             rups::Variable::parse("ups.status", "OL CHRG".to_string()),
             rups::Variable::parse("ups.beeper.status", "enabled".to_string()),
@@ -280,7 +276,7 @@ fn reset_metrics_sets_all_gauges_to_zero() {
 }
 
 #[tokio::test]
-async fn create_connection_and_get_ups_vars_success() {
+async fn create_connection_and_get_ups_vars_filters_non_float_vars() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
 
@@ -289,9 +285,10 @@ async fn create_connection_and_get_ups_vars_success() {
         conn.handle_get_ups_vars(
             "ups",
             &[
-                ("input.voltage", "122.0", "Input voltage"),
-                ("ups.load", "25.5", "UPS load"),
-                ("ups.status", "OL", "UPS status"),
+                ("input.voltage", "122.0", Some("Input voltage")),
+                ("ups.load", "25.5", Some("UPS load")),
+                ("ups.status", "OL", None),
+                ("ups.mfr", "CPS", None),
             ],
         )
         .await;
@@ -299,15 +296,16 @@ async fn create_connection_and_get_ups_vars_success() {
     });
 
     let args = Args::try_parse_from(["pistachio", "--ups-port", &port.to_string()]).unwrap();
-    let mut conn = create_connection(&args).await.unwrap();
-    let ups_vars = get_ups_vars(&args, &mut conn).await.unwrap();
+    let mut conn = args.create_connection().await.unwrap();
+    let ups_vars = args.get_ups_vars(&mut conn).await.unwrap();
     conn.close().await.unwrap();
     server.await.unwrap();
 
-    assert_eq!(ups_vars.len(), 3);
-    assert_eq!(ups_vars.get("input.voltage"), Some(&("122.0".to_string(), "Input voltage".to_string())));
-    assert_eq!(ups_vars.get("ups.load"), Some(&("25.5".to_string(), "UPS load".to_string())));
-    assert_eq!(ups_vars.get("ups.status"), Some(&("OL".to_string(), "UPS status".to_string())));
+    assert_eq!(ups_vars.len(), 2);
+    assert_eq!(ups_vars.get("input.voltage"), Some(&"Input voltage".to_string()));
+    assert_eq!(ups_vars.get("ups.load"), Some(&"UPS load".to_string()));
+    assert!(!ups_vars.contains_key("ups.status"));
+    assert!(!ups_vars.contains_key("ups.mfr"));
 }
 
 #[tokio::test]
@@ -317,7 +315,7 @@ async fn create_connection_fails_when_unreachable() {
     drop(listener);
 
     let args = Args::try_parse_from(["pistachio", "--ups-port", &port.to_string()]).unwrap();
-    let result = create_connection(&args).await;
+    let result = args.create_connection().await;
     assert!(result.is_err());
 }
 
@@ -334,7 +332,7 @@ async fn monitor_ups_polls_recovers_from_io_error_and_shuts_down() {
     let server = tokio::spawn(async move {
         // Initial connection + variable discovery
         let mut conn1 = FakeNutConn::accept(&listener).await;
-        conn1.handle_get_ups_vars("ups", &[("input.voltage", "120.0", "Input voltage")]).await;
+        conn1.handle_get_ups_vars("ups", &[("input.voltage", "120.0", Some("Input voltage"))]).await;
 
         // Poll 1: healthy update
         conn1.handle_list_vars("ups", &[("input.voltage", "121.5"), ("ups.status", "OL")]).await;
@@ -370,8 +368,8 @@ async fn monitor_ups_polls_recovers_from_io_error_and_shuts_down() {
 
     let args = Args::try_parse_from(["pistachio", "--ups-port", &port.to_string(), "--poll-rate", "5"]).unwrap();
     with_async_recorder(&recorder, async {
-        let mut conn = create_connection(&args).await.unwrap();
-        let ups_vars = get_ups_vars(&args, &mut conn).await.unwrap();
+        let mut conn = args.create_connection().await.unwrap();
+        let ups_vars = args.get_ups_vars(&mut conn).await.unwrap();
         let metrics = Metrics::build(&ups_vars);
         monitor_ups(conn, args, metrics, shutdown_rx).await;
     })
@@ -390,7 +388,7 @@ async fn monitor_ups_handles_reconnect_and_shutdown_close_errors() {
 
     let server = tokio::spawn(async move {
         let mut conn = FakeNutConn::accept(&listener).await;
-        conn.handle_get_ups_vars("ups", &[("input.voltage", "120.0", "Input voltage")]).await;
+        conn.handle_get_ups_vars("ups", &[("input.voltage", "120.0", Some("Input voltage"))]).await;
 
         // Wait for Poll 1 request, then drop both the connection and the listener so reconnect fails
         assert_eq!(conn.read_line().await, "LIST VAR ups");
@@ -405,8 +403,8 @@ async fn monitor_ups_handles_reconnect_and_shutdown_close_errors() {
 
     let args = Args::try_parse_from(["pistachio", "--ups-port", &port.to_string(), "--poll-rate", "5"]).unwrap();
     with_async_recorder(&recorder, async {
-        let mut conn = create_connection(&args).await.unwrap();
-        let ups_vars = get_ups_vars(&args, &mut conn).await.unwrap();
+        let mut conn = args.create_connection().await.unwrap();
+        let ups_vars = args.get_ups_vars(&mut conn).await.unwrap();
         let metrics = Metrics::build(&ups_vars);
         monitor_ups(conn, args, metrics, shutdown_rx).await;
     })

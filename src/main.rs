@@ -2,7 +2,6 @@ use clap::Parser;
 use env_logger::{Builder, Env};
 use log::{debug, error, info};
 use metrics_exporter_prometheus::PrometheusBuilder;
-use std::net::SocketAddr;
 use std::process;
 use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::oneshot;
@@ -36,20 +35,19 @@ async fn main() {
     info!("UPS {}@{}:{} will be checked every {} seconds", args.ups_name, args.ups_host, args.ups_port, args.poll_rate);
 
     // Create connection to UPS
-    let mut conn = pistachio::create_connection(&args).await.unwrap_or_else(|err| {
+    let mut conn = args.create_connection().await.unwrap_or_else(|err| {
         error!("Could not connect to the UPS: {err}");
         process::exit(1);
     });
 
     // Get list of available UPS vars
-    let ups_vars = pistachio::get_ups_vars(&args, &mut conn).await.unwrap_or_else(|err| {
+    let ups_vars = args.get_ups_vars(&mut conn).await.unwrap_or_else(|err| {
         error!("Could not get list of available variables from the UPS: {err}");
         process::exit(1);
     });
 
     // Start prometheus exporter
-    let bind_addr = SocketAddr::new(args.bind_ip, args.bind_port);
-    PrometheusBuilder::new().with_http_listener(bind_addr).install().unwrap_or_else(|err| {
+    PrometheusBuilder::new().with_http_listener(args.bind_addr()).install().unwrap_or_else(|err| {
         error!("Failed to create prometheus exporter: {err}");
         process::exit(1);
     });

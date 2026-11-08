@@ -9,7 +9,8 @@ use log::{debug, error, info, warn};
 use metrics::{describe_gauge, gauge};
 use rups::tokio::Connection;
 use std::collections::HashMap;
-use std::net::{IpAddr, Ipv4Addr};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::num::NonZeroU64;
 use std::time::Duration;
 use tokio::sync::oneshot;
 use tokio::time;
@@ -20,7 +21,7 @@ const DEFAULT_UPS_HOST: &str = "127.0.0.1";
 const DEFAULT_UPS_PORT: u16 = 3493;
 const DEFAULT_BIND_IP: IpAddr = IpAddr::V4(Ipv4Addr::UNSPECIFIED);
 const DEFAULT_BIND_PORT: u16 = 9120;
-const DEFAULT_POLL_RATE: u64 = 10;
+const DEFAULT_POLL_RATE: NonZeroU64 = NonZeroU64::MIN.saturating_add(9);
 
 /// An array of possible UPS system states
 const UPS_STATES: &[&str] = &[
@@ -30,7 +31,7 @@ const UPS_STATES: &[&str] = &[
 /// An array of possible UPS beeper states
 const BEEPER_STATES: &[&str] = &["enabled", "disabled", "muted"];
 
-/// An array of possible UPS beeper states
+/// UPS status variables and their associated label state sets
 const STATUS_VARS: &[(&str, &str, &[&str])] =
     &[("ups.status", "UPS Status Code", UPS_STATES), ("ups.beeper.status", "Beeper Status", BEEPER_STATES)];
 
@@ -54,32 +55,103 @@ pub struct Args {
     #[arg(long, env, default_value_t = DEFAULT_BIND_PORT)]
     pub bind_port: u16,
     /// Time in seconds between requests to the NUT server. Must be at least 1 second. Default is `10`.
-    #[arg(long, env, default_value_t = DEFAULT_POLL_RATE, value_parser = clap::value_parser!(u64).range(1..))]
-    pub poll_rate: u64,
+    #[arg(long, env, default_value_t = DEFAULT_POLL_RATE)]
+    pub poll_rate: NonZeroU64,
+}
+
+impl Args {
+    /// Returns the socket address on which the Prometheus exporter will listen.
+    #[must_use]
+    pub const fn bind_addr(&self) -> SocketAddr {
+        SocketAddr::new(self.bind_ip, self.bind_port)
+    }
+
+    /// Returns the polling interval as a [`Duration`].
+    #[must_use]
+    pub const fn poll_interval(&self) -> Duration {
+        Duration::from_secs(self.poll_rate.get())
+    }
+
+    /// Creates a connection for communicating with the NUT server.
+    ///
+    /// # Errors
+    ///
+    /// An error will be returned if the UPS host and port cannot be used to create a valid
+    /// [`rups::Host`] or if the connection fails.
+    pub async fn create_connection(&self) -> Result<Connection, rups::ClientError> {
+        let rups_host = rups::Host::try_from((self.ups_host.clone(), self.ups_port))?;
+        let rups_config = rups::ConfigBuilder::new().with_host(rups_host).build();
+        Connection::new(&rups_config).await
+    }
+
+    /// Queries the NUT server for all numeric UPS variables and their descriptions.
+    ///
+    /// Non-numeric variables are filtered out before requesting descriptions, since basic
+    /// Prometheus gauges only represent floating-point values.
+    ///
+    /// # Errors
+    ///
+    /// An error will be returned if the list of variables or their descriptions cannot be
+    /// retrieved from the NUT server, such as if connection to the server is lost.
+    pub async fn get_ups_vars(&self, conn: &mut Connection) -> Result<HashMap<String, String>, rups::ClientError> {
+        let ups_name = self.ups_name.as_str();
+        let available_vars = conn.list_vars(ups_name).await?;
+        let mut ups_vars = HashMap::new();
+        for var in available_vars.iter().filter(|var| var.value().parse::<f64>().is_ok()) {
+            let description = conn.get_var_description(ups_name, var.name()).await?;
+            ups_vars.insert(var.name().to_owned(), description);
+        }
+        Ok(ups_vars)
+    }
+}
+
+/// A Prometheus gauge that tracks a set of status labels.
+#[derive(Debug)]
+struct LabelGauge {
+    name: String,
+    states: &'static [&'static str],
+}
+
+impl LabelGauge {
+    fn register(var_name: &str, description: &'static str, states: &'static [&'static str]) -> Self {
+        let name = convert_var_name(var_name);
+        describe_gauge!(name.clone(), description);
+        debug!("Gauge {name} has been registered for var {var_name}");
+        Self { name, states }
+    }
+
+    fn update(&self, value: &str) {
+        for &state in self.states {
+            let is_active = value.split_whitespace().any(|token| token == state);
+            gauge!(self.name.clone(), "status" => state).set(u8::from(is_active));
+        }
+    }
+
+    fn reset(&self) {
+        for &state in self.states {
+            gauge!(self.name.clone(), "status" => state).set(0.0);
+        }
+    }
 }
 
 /// A collection of all registered metrics, both labelled and unlabelled.
 #[derive(Debug)]
 pub struct Metrics {
     basic_gauges: HashMap<String, String>,
-    label_gauges: HashMap<String, (String, &'static [&'static str])>,
+    label_gauges: HashMap<String, LabelGauge>,
 }
 
 impl Metrics {
-    /// A builder that creates a Metrics instance from a map of variable names, values, and descriptions.
-    /// Gauges are only registered for variables with values that can be parsed as floats, since
-    /// gauges can only have floats as values.
+    /// Creates a [`Metrics`] instance from a map of numeric variable names and descriptions.
     #[must_use]
-    pub fn build(ups_vars: &HashMap<String, (String, String)>) -> Self {
+    pub fn build(ups_vars: &HashMap<String, String>) -> Self {
         let basic_gauges = ups_vars
             .iter()
-            .filter_map(|(name, (value, desc))| {
-                value.parse::<f64>().ok().map(|_| {
-                    let gauge_name = convert_var_name(name);
-                    describe_gauge!(gauge_name.clone(), desc.clone());
-                    debug!("Gauge {gauge_name} has been registered for var {name}");
-                    (name.clone(), gauge_name)
-                })
+            .map(|(name, desc)| {
+                let gauge_name = convert_var_name(name);
+                describe_gauge!(gauge_name.clone(), desc.clone());
+                debug!("Gauge {gauge_name} has been registered for var {name}");
+                (name.clone(), gauge_name)
             })
             .collect();
 
@@ -87,12 +159,7 @@ impl Metrics {
         // This currently only includes overall UPS status and beeper status.
         let label_gauges = STATUS_VARS
             .iter()
-            .map(|(name, desc, states)| {
-                let gauge_name = convert_var_name(name);
-                describe_gauge!(gauge_name.clone(), *desc);
-                debug!("Gauge {gauge_name} has been registered for var {name}");
-                ((*name).to_owned(), (gauge_name, *states))
-            })
+            .map(|&(name, desc, states)| (name.to_owned(), LabelGauge::register(name, desc, states)))
             .collect();
 
         Self { basic_gauges, label_gauges }
@@ -104,10 +171,10 @@ impl Metrics {
         self.basic_gauges.len() + self.label_gauges.len()
     }
 
-    /// Takes a list of variable names and values to update all associated gauges. For label
-    /// gauges, each label of the gauge is updated to reflect all current states present in the
-    /// value from the UPS.
-    pub fn update(&self, var_list: &Vec<rups::Variable>) {
+    /// Takes a slice of variables and updates all associated gauges. For label gauges, each
+    /// label of the gauge is updated to reflect all current states present in the value from
+    /// the UPS.
+    pub fn update(&self, var_list: &[rups::Variable]) {
         for var in var_list {
             if let Some(gauge_name) = self.basic_gauges.get(var.name()) {
                 // Update basic gauges
@@ -116,13 +183,9 @@ impl Metrics {
                 } else {
                     warn!("Failed to update gauge {gauge_name} because the value was not a float");
                 }
-            } else if let Some((gauge_name, states)) = self.label_gauges.get(var.name()) {
+            } else if let Some(label_gauge) = self.label_gauges.get(var.name()) {
                 // Update label gauges
-                let value = var.value();
-                for &state in *states {
-                    let is_active = value.split_whitespace().any(|token| token == state);
-                    gauge!(gauge_name.clone(), "status" => state).set(u8::from(is_active));
-                }
+                label_gauge.update(&var.value());
             } else {
                 debug!("Variable {} does not have an associated gauge to update", var.name());
             }
@@ -134,47 +197,10 @@ impl Metrics {
         for gauge_name in self.basic_gauges.values() {
             gauge!(gauge_name.clone()).set(0.0);
         }
-        for (gauge_name, states) in self.label_gauges.values() {
-            for state in states.iter().map(|x| (*x).to_owned()) {
-                gauge!(gauge_name.clone(), "status" => state).set(0.0);
-            }
+        for label_gauge in self.label_gauges.values() {
+            label_gauge.reset();
         }
     }
-}
-
-/// Creates a connection for communicating with the NUT server.
-///
-/// # Errors
-///
-/// An error will be returned if the UPS host and port in the provided [Args] cannot be used to
-/// create a valid [`rups::Host`].
-pub async fn create_connection(args: &Args) -> Result<Connection, rups::ClientError> {
-    // Create connection to UPS
-    let rups_host = rups::Host::try_from((args.ups_host.clone(), args.ups_port))?;
-    let rups_config = rups::ConfigBuilder::new().with_host(rups_host).build();
-    Connection::new(&rups_config).await
-}
-
-/// Connects to the NUT server to produce a map of all available UPS variables, along with their
-/// values and descriptions.
-///
-/// # Errors
-///
-/// An error will be returned if the list of variables or their descriptions cannot be retrieved
-/// from the NUT server, such as if connection to the server is lost.
-pub async fn get_ups_vars(
-    args: &Args,
-    conn: &mut Connection,
-) -> Result<HashMap<String, (String, String)>, rups::ClientError> {
-    // Get available vars
-    let ups_name = args.ups_name.as_str();
-    let available_vars = conn.list_vars(ups_name).await?;
-    let mut ups_vars = HashMap::new();
-    for var in &available_vars {
-        let description = conn.get_var_description(ups_name, var.name()).await?;
-        ups_vars.insert(var.name().to_owned(), (var.value(), description));
-    }
-    Ok(ups_vars)
 }
 
 /// Polls the NUT server at the configured interval and updates Prometheus metrics, resetting
@@ -182,7 +208,7 @@ pub async fn get_ups_vars(
 /// received.
 pub async fn monitor_ups(mut conn: Connection, args: Args, metrics: Metrics, shutdown_rx: oneshot::Receiver<()>) {
     let mut is_failing = false;
-    let mut interval = time::interval(Duration::from_secs(args.poll_rate));
+    let mut interval = time::interval(args.poll_interval());
 
     tokio::select! {
         () = async {
@@ -211,7 +237,7 @@ pub async fn monitor_ups(mut conn: Connection, args: Args, metrics: Metrics, shu
                         if let rups::ClientError::Io(_) = err {
                             debug!("Attempting to recreate connection due to IO error...");
                             // Creating new connection
-                            match create_connection(&args).await {
+                            match args.create_connection().await {
                                 Ok(new_conn) => {
                                     conn = new_conn;
                                     debug!("Connection recreated successfully");
