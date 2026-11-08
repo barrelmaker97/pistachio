@@ -1,72 +1,11 @@
 use clap::Parser;
 use env_logger::{Builder, Env};
-use log::{debug, error, info, warn};
+use log::{debug, error, info};
 use metrics_exporter_prometheus::PrometheusBuilder;
 use std::net::SocketAddr;
 use std::process;
-use std::time::Duration;
 use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::oneshot;
-use tokio::time;
-
-async fn monitor_ups(
-    mut conn: rups::tokio::Connection,
-    args: pistachio::Args,
-    metrics: pistachio::Metrics,
-    shutdown_rx: oneshot::Receiver<()>,
-) {
-    let mut is_failing = false;
-    let mut interval = time::interval(Duration::from_secs(args.poll_rate));
-
-    tokio::select! {
-        _ = async {
-            loop {
-                interval.tick().await;
-                debug!("Polling UPS...");
-                match conn.list_vars(args.ups_name.as_str()).await {
-                    Ok(var_list) => {
-                        metrics.update(&var_list);
-                        debug!("Metrics updated");
-                        if is_failing {
-                            info!("Connection with the UPS has been reestablished");
-                            is_failing = false;
-                        }
-                    }
-                    Err(err) => {
-                        // Log warning and set gauges to 0 to indicate failure
-                        warn!("Failed to connect to the UPS: {err}");
-                        metrics.reset();
-                        debug!("Reset gauges to zero because the UPS was unreachable");
-                        is_failing = true;
-
-                        // IO errors can cause the connection to continue failing,
-                        // even once the UPS is back online. Recreating the connection
-                        // resolves the issue
-                        if let rups::ClientError::Io(_) = err {
-                            debug!("Attempting to recreate connection due to IO error...");
-                            //Creating new connection
-                            match pistachio::create_connection(&args).await {
-                                Ok(new_conn) => {
-                                    conn = new_conn;
-                                    debug!("Connection recreated successfully");
-                                },
-                                Err(err) => {
-                                    error!("Failed to recreate connection: {err}");
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        } => {},
-        _ = shutdown_rx => {
-            info!("Attempting graceful shutdown");
-            if let Err(e) = conn.close().await {
-                error!("Failed to close connection during shutdown: {e}");
-            }
-        }
-    }
-}
 
 async fn handle_signals(shutdown_tx: oneshot::Sender<()>) {
     let mut sigint = signal(SignalKind::interrupt()).expect("Failed to register SIGINT handler");
@@ -126,7 +65,7 @@ async fn main() {
     tokio::spawn(handle_signals(shutdown_tx));
 
     // Start monitoring
-    monitor_ups(conn, args, metrics, shutdown_rx).await;
+    pistachio::monitor_ups(conn, args, metrics, shutdown_rx).await;
 
     info!("Shutdown complete, goodbye");
 }

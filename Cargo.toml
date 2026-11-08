@@ -45,3 +45,6 @@ metrics = "0.24.6"
 metrics-exporter-prometheus = { version = "0.18.3", default-features = false, features = ["http-listener"] }
 rups = { version = "0.6.1", features = ["async"] }
 tokio = { version = "1.51.1", features = ["macros", "rt", "signal", "sync", "time"] }
+
+[dev-dependencies]
+tokio = { version = "1.51.1", features = ["io-util", "net", "test-util"] }

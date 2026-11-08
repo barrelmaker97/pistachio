@@ -5,11 +5,14 @@
 //! Pistachio is a Prometheus exporter written in Rust, designed for monitoring UPS devices using Network UPS Tools (NUT).
 
 use clap::Parser;
-use log::{debug, warn};
+use log::{debug, error, info, warn};
 use metrics::{describe_gauge, gauge};
 use rups::tokio::Connection;
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr};
+use std::time::Duration;
+use tokio::sync::oneshot;
+use tokio::time;
 
 /// Default configuration options
 const DEFAULT_UPS_NAME: &str = "ups";
@@ -172,6 +175,63 @@ pub async fn get_ups_vars(
         ups_vars.insert(var.name().to_owned(), (var.value(), description));
     }
     Ok(ups_vars)
+}
+
+/// Polls the NUT server at the configured interval and updates Prometheus metrics, resetting
+/// gauges on error and recreating the connection on I/O failures until a shutdown signal is
+/// received.
+pub async fn monitor_ups(mut conn: Connection, args: Args, metrics: Metrics, shutdown_rx: oneshot::Receiver<()>) {
+    let mut is_failing = false;
+    let mut interval = time::interval(Duration::from_secs(args.poll_rate));
+
+    tokio::select! {
+        () = async {
+            loop {
+                interval.tick().await;
+                debug!("Polling UPS...");
+                match conn.list_vars(args.ups_name.as_str()).await {
+                    Ok(var_list) => {
+                        metrics.update(&var_list);
+                        debug!("Metrics updated");
+                        if is_failing {
+                            info!("Connection with the UPS has been reestablished");
+                            is_failing = false;
+                        }
+                    }
+                    Err(err) => {
+                        // Log warning and set gauges to 0 to indicate failure
+                        warn!("Failed to connect to the UPS: {err}");
+                        metrics.reset();
+                        debug!("Reset gauges to zero because the UPS was unreachable");
+                        is_failing = true;
+
+                        // IO errors can cause the connection to continue failing,
+                        // even once the UPS is back online. Recreating the connection
+                        // resolves the issue
+                        if let rups::ClientError::Io(_) = err {
+                            debug!("Attempting to recreate connection due to IO error...");
+                            // Creating new connection
+                            match create_connection(&args).await {
+                                Ok(new_conn) => {
+                                    conn = new_conn;
+                                    debug!("Connection recreated successfully");
+                                }
+                                Err(err) => {
+                                    error!("Failed to recreate connection: {err}");
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } => {},
+        _ = shutdown_rx => {
+            info!("Attempting graceful shutdown");
+            if let Err(e) = conn.close().await {
+                error!("Failed to close connection during shutdown: {e}");
+            }
+        }
+    }
 }
 
 fn convert_var_name(name: &str) -> String {
