@@ -71,38 +71,6 @@ impl Args {
     pub const fn poll_interval(&self) -> Duration {
         Duration::from_secs(self.poll_rate.get())
     }
-
-    /// Creates a connection for communicating with the NUT server.
-    ///
-    /// # Errors
-    ///
-    /// An error will be returned if the UPS host and port cannot be used to create a valid
-    /// [`rups::Host`] or if the connection fails.
-    pub async fn create_connection(&self) -> Result<Connection, rups::ClientError> {
-        let rups_host = rups::Host::try_from((self.ups_host.clone(), self.ups_port))?;
-        let rups_config = rups::ConfigBuilder::new().with_host(rups_host).build();
-        Connection::new(&rups_config).await
-    }
-
-    /// Queries the NUT server for all numeric UPS variables and their descriptions.
-    ///
-    /// Non-numeric variables are filtered out before requesting descriptions, since basic
-    /// Prometheus gauges only represent floating-point values.
-    ///
-    /// # Errors
-    ///
-    /// An error will be returned if the list of variables or their descriptions cannot be
-    /// retrieved from the NUT server, such as if connection to the server is lost.
-    pub async fn get_ups_vars(&self, conn: &mut Connection) -> Result<HashMap<String, String>, rups::ClientError> {
-        let ups_name = self.ups_name.as_str();
-        let available_vars = conn.list_vars(ups_name).await?;
-        let mut ups_vars = HashMap::new();
-        for var in available_vars.iter().filter(|var| var.value().parse::<f64>().is_ok()) {
-            let description = conn.get_var_description(ups_name, var.name()).await?;
-            ups_vars.insert(var.name().to_owned(), description);
-        }
-        Ok(ups_vars)
-    }
 }
 
 /// A Prometheus gauge that tracks a set of status labels.
@@ -203,6 +171,39 @@ impl Metrics {
     }
 }
 
+/// Creates a connection for communicating with the NUT server.
+///
+/// # Errors
+///
+/// An error will be returned if the UPS host and port in the provided [Args] cannot be used to
+/// create a valid [`rups::Host`] or if the connection fails.
+pub async fn create_connection(args: &Args) -> Result<Connection, rups::ClientError> {
+    let rups_host = rups::Host::try_from((args.ups_host.clone(), args.ups_port))?;
+    let rups_config = rups::ConfigBuilder::new().with_host(rups_host).build();
+    Connection::new(&rups_config).await
+}
+
+/// Connects to the NUT server to produce a map of all numeric UPS variables and their
+/// descriptions.
+///
+/// Non-numeric variables are filtered out before requesting descriptions, since basic Prometheus
+/// gauges only represent floating-point values.
+///
+/// # Errors
+///
+/// An error will be returned if the list of variables or their descriptions cannot be retrieved
+/// from the NUT server, such as if connection to the server is lost.
+pub async fn get_ups_vars(args: &Args, conn: &mut Connection) -> Result<HashMap<String, String>, rups::ClientError> {
+    let ups_name = args.ups_name.as_str();
+    let available_vars = conn.list_vars(ups_name).await?;
+    let mut ups_vars = HashMap::new();
+    for var in available_vars.iter().filter(|var| var.value().parse::<f64>().is_ok()) {
+        let description = conn.get_var_description(ups_name, var.name()).await?;
+        ups_vars.insert(var.name().to_owned(), description);
+    }
+    Ok(ups_vars)
+}
+
 /// Polls the NUT server at the configured interval and updates Prometheus metrics, resetting
 /// gauges on error and recreating the connection on I/O failures until a shutdown signal is
 /// received.
@@ -237,7 +238,7 @@ pub async fn monitor_ups(mut conn: Connection, args: Args, metrics: Metrics, shu
                         if let rups::ClientError::Io(_) = err {
                             debug!("Attempting to recreate connection due to IO error...");
                             // Creating new connection
-                            match args.create_connection().await {
+                            match create_connection(&args).await {
                                 Ok(new_conn) => {
                                     conn = new_conn;
                                     debug!("Connection recreated successfully");

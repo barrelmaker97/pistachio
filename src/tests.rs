@@ -296,8 +296,8 @@ async fn create_connection_and_get_ups_vars_filters_non_float_vars() {
     });
 
     let args = Args::try_parse_from(["pistachio", "--ups-port", &port.to_string()]).unwrap();
-    let mut conn = args.create_connection().await.unwrap();
-    let ups_vars = args.get_ups_vars(&mut conn).await.unwrap();
+    let mut conn = create_connection(&args).await.unwrap();
+    let ups_vars = get_ups_vars(&args, &mut conn).await.unwrap();
     conn.close().await.unwrap();
     server.await.unwrap();
 
@@ -315,7 +315,7 @@ async fn create_connection_fails_when_unreachable() {
     drop(listener);
 
     let args = Args::try_parse_from(["pistachio", "--ups-port", &port.to_string()]).unwrap();
-    let result = args.create_connection().await;
+    let result = create_connection(&args).await;
     assert!(result.is_err());
 }
 
@@ -368,8 +368,8 @@ async fn monitor_ups_polls_recovers_from_io_error_and_shuts_down() {
 
     let args = Args::try_parse_from(["pistachio", "--ups-port", &port.to_string(), "--poll-rate", "5"]).unwrap();
     with_async_recorder(&recorder, async {
-        let mut conn = args.create_connection().await.unwrap();
-        let ups_vars = args.get_ups_vars(&mut conn).await.unwrap();
+        let mut conn = create_connection(&args).await.unwrap();
+        let ups_vars = get_ups_vars(&args, &mut conn).await.unwrap();
         let metrics = Metrics::build(&ups_vars);
         monitor_ups(conn, args, metrics, shutdown_rx).await;
     })
@@ -403,8 +403,8 @@ async fn monitor_ups_handles_reconnect_and_shutdown_close_errors() {
 
     let args = Args::try_parse_from(["pistachio", "--ups-port", &port.to_string(), "--poll-rate", "5"]).unwrap();
     with_async_recorder(&recorder, async {
-        let mut conn = args.create_connection().await.unwrap();
-        let ups_vars = args.get_ups_vars(&mut conn).await.unwrap();
+        let mut conn = create_connection(&args).await.unwrap();
+        let ups_vars = get_ups_vars(&args, &mut conn).await.unwrap();
         let metrics = Metrics::build(&ups_vars);
         monitor_ups(conn, args, metrics, shutdown_rx).await;
     })
