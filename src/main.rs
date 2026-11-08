@@ -1,72 +1,10 @@
 use clap::Parser;
 use env_logger::{Builder, Env};
-use log::{debug, error, info, warn};
+use log::{debug, error, info};
 use metrics_exporter_prometheus::PrometheusBuilder;
-use std::net::SocketAddr;
 use std::process;
-use std::time::Duration;
 use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::oneshot;
-use tokio::time;
-
-async fn monitor_ups(
-    mut conn: rups::tokio::Connection,
-    args: pistachio::Args,
-    metrics: pistachio::Metrics,
-    shutdown_rx: oneshot::Receiver<()>,
-) {
-    let mut is_failing = false;
-    let mut interval = time::interval(Duration::from_secs(args.poll_rate));
-
-    tokio::select! {
-        _ = async {
-            loop {
-                interval.tick().await;
-                debug!("Polling UPS...");
-                match conn.list_vars(args.ups_name.as_str()).await {
-                    Ok(var_list) => {
-                        metrics.update(&var_list);
-                        debug!("Metrics updated");
-                        if is_failing {
-                            info!("Connection with the UPS has been reestablished");
-                            is_failing = false;
-                        }
-                    }
-                    Err(err) => {
-                        // Log warning and set gauges to 0 to indicate failure
-                        warn!("Failed to connect to the UPS: {err}");
-                        metrics.reset();
-                        debug!("Reset gauges to zero because the UPS was unreachable");
-                        is_failing = true;
-
-                        // IO errors can cause the connection to continue failing,
-                        // even once the UPS is back online. Recreating the connection
-                        // resolves the issue
-                        if let rups::ClientError::Io(_) = err {
-                            debug!("Attempting to recreate connection due to IO error...");
-                            //Creating new connection
-                            match pistachio::create_connection(&args).await {
-                                Ok(new_conn) => {
-                                    conn = new_conn;
-                                    debug!("Connection recreated successfully");
-                                },
-                                Err(err) => {
-                                    error!("Failed to recreate connection: {err}");
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        } => {},
-        _ = shutdown_rx => {
-            info!("Attempting graceful shutdown");
-            if let Err(e) = conn.close().await {
-                error!("Failed to close connection during shutdown: {e}");
-            }
-        }
-    }
-}
 
 async fn handle_signals(shutdown_tx: oneshot::Sender<()>) {
     let mut sigint = signal(SignalKind::interrupt()).expect("Failed to register SIGINT handler");
@@ -97,20 +35,19 @@ async fn main() {
     info!("UPS {}@{}:{} will be checked every {} seconds", args.ups_name, args.ups_host, args.ups_port, args.poll_rate);
 
     // Create connection to UPS
-    let mut conn = pistachio::create_connection(&args).await.unwrap_or_else(|err| {
+    let mut client = pistachio::NutClient::connect(&args).await.unwrap_or_else(|err| {
         error!("Could not connect to the UPS: {err}");
         process::exit(1);
     });
 
-    // Get list of available UPS vars
-    let ups_vars = pistachio::get_ups_vars(&args, &mut conn).await.unwrap_or_else(|err| {
+    // Get list of available numeric UPS vars
+    let ups_vars = client.discover_numeric_vars().await.unwrap_or_else(|err| {
         error!("Could not get list of available variables from the UPS: {err}");
         process::exit(1);
     });
 
     // Start prometheus exporter
-    let bind_addr = SocketAddr::new(args.bind_ip, args.bind_port);
-    PrometheusBuilder::new().with_http_listener(bind_addr).install().unwrap_or_else(|err| {
+    PrometheusBuilder::new().with_http_listener(args.bind_addr()).install().unwrap_or_else(|err| {
         error!("Failed to create prometheus exporter: {err}");
         process::exit(1);
     });
@@ -126,7 +63,7 @@ async fn main() {
     tokio::spawn(handle_signals(shutdown_tx));
 
     // Start monitoring
-    monitor_ups(conn, args, metrics, shutdown_rx).await;
+    pistachio::monitor_ups(client, metrics, args.poll_interval(), shutdown_rx).await;
 
     info!("Shutdown complete, goodbye");
 }
