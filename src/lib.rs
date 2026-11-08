@@ -115,7 +115,9 @@ impl Metrics {
                 }
             } else if let Some((gauge_name, states)) = self.label_gauges.get(var.name()) {
                 // Update label gauges
-                for (state, is_active) in states.iter().map(|x| ((*x).to_owned(), var.value().contains(x))) {
+                let value = var.value();
+                for &state in *states {
+                    let is_active = value.split_whitespace().any(|token| token == state);
                     gauge!(gauge_name.clone(), "status" => state).set(u8::from(is_active));
                 }
             } else {

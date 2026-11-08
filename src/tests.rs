@@ -1,4 +1,5 @@
 use super::*;
+use metrics_exporter_prometheus::PrometheusBuilder;
 
 #[test]
 fn parse_default_args() {
@@ -132,4 +133,86 @@ fn convert_var_empty() {
     let metric_name = convert_var_name(var_name);
 
     assert_eq!(metric_name, expected_metric_name);
+}
+
+#[test]
+fn update_basic_and_label_metrics() {
+    let recorder = PrometheusBuilder::new().build_recorder();
+    let handle = recorder.handle();
+
+    let mut ups_vars = HashMap::new();
+    ups_vars.insert("input.voltage".to_string(), ("120.0".to_string(), "Input voltage".to_string()));
+    ups_vars.insert("ups.load".to_string(), ("15.0".to_string(), "UPS load".to_string()));
+
+    let var_list = vec![
+        rups::Variable::parse("input.voltage", "122.5".to_string()),
+        rups::Variable::parse("ups.load", "30.0".to_string()),
+        rups::Variable::parse("ups.status", "OB DISCHRG".to_string()),
+        rups::Variable::parse("ups.beeper.status", "muted".to_string()),
+        rups::Variable::parse("ups.mfr", "CPS".to_string()),
+    ];
+
+    metrics::with_local_recorder(&recorder, || {
+        let metrics = Metrics::build(&ups_vars);
+        metrics.update(&var_list);
+    });
+
+    let rendered = handle.render();
+    assert!(rendered.contains("# HELP ups_input_voltage Input voltage"));
+    assert!(rendered.contains("# TYPE ups_input_voltage gauge"));
+    assert!(rendered.contains("ups_input_voltage 122.5"));
+    assert!(rendered.contains("ups_load 30"));
+    assert!(rendered.contains("ups_status{status=\"OB\"} 1"));
+    assert!(rendered.contains("ups_status{status=\"DISCHRG\"} 1"));
+    assert!(rendered.contains("ups_status{status=\"CHRG\"} 0"));
+    assert!(rendered.contains("ups_status{status=\"OL\"} 0"));
+    assert!(rendered.contains("ups_beeper_status{status=\"muted\"} 1"));
+    assert!(rendered.contains("ups_beeper_status{status=\"enabled\"} 0"));
+    assert!(rendered.contains("ups_beeper_status{status=\"disabled\"} 0"));
+}
+
+#[test]
+fn update_basic_gauge_ignores_invalid_float() {
+    let recorder = PrometheusBuilder::new().build_recorder();
+    let handle = recorder.handle();
+
+    let mut ups_vars = HashMap::new();
+    ups_vars.insert("input.voltage".to_string(), ("120.0".to_string(), "Input voltage".to_string()));
+
+    metrics::with_local_recorder(&recorder, || {
+        let metrics = Metrics::build(&ups_vars);
+        metrics.update(&vec![rups::Variable::parse("input.voltage", "121.0".to_string())]);
+        metrics.update(&vec![rups::Variable::parse("input.voltage", "not-a-float".to_string())]);
+    });
+
+    let rendered = handle.render();
+    assert!(rendered.contains("ups_input_voltage 121"));
+}
+
+#[test]
+fn reset_metrics_sets_all_gauges_to_zero() {
+    let recorder = PrometheusBuilder::new().build_recorder();
+    let handle = recorder.handle();
+
+    let mut ups_vars = HashMap::new();
+    ups_vars.insert("input.voltage".to_string(), ("120.0".to_string(), "Input voltage".to_string()));
+
+    metrics::with_local_recorder(&recorder, || {
+        let metrics = Metrics::build(&ups_vars);
+        metrics.update(&vec![
+            rups::Variable::parse("input.voltage", "122.0".to_string()),
+            rups::Variable::parse("ups.status", "OL CHRG".to_string()),
+            rups::Variable::parse("ups.beeper.status", "enabled".to_string()),
+        ]);
+        metrics.reset();
+    });
+
+    let rendered = handle.render();
+    assert!(rendered.contains("ups_input_voltage 0"));
+    for state in UPS_STATES {
+        assert!(rendered.contains(&format!("ups_status{{status=\"{state}\"}} 0")));
+    }
+    for state in BEEPER_STATES {
+        assert!(rendered.contains(&format!("ups_beeper_status{{status=\"{state}\"}} 0")));
+    }
 }
