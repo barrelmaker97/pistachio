@@ -37,7 +37,7 @@ ci: fmt-check clippy coverage
 coverage:
     cargo llvm-cov \
         --lcov \
-        --ignore-filename-regex '(tests/|build\.rs)' \
+        --ignore-filename-regex '(tests/|tests\.rs|build\.rs)' \
         --output-path lcov.info
     @echo ""
     @echo "Coverage report written to lcov.info"
@@ -47,7 +47,7 @@ coverage:
 coverage-html:
     cargo llvm-cov \
         --html \
-        --ignore-filename-regex '(tests/|build\.rs)' \
+        --ignore-filename-regex '(tests/|tests\.rs|build\.rs)' \
         --output-dir coverage/
     @echo ""
     @echo "HTML report written to coverage/"
