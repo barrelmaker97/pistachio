@@ -1,5 +1,6 @@
 use super::*;
 use metrics_exporter_prometheus::PrometheusBuilder;
+use std::fmt::Write as _;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{
     TcpListener,
@@ -36,9 +37,9 @@ impl FakeNutConn {
         assert_eq!(self.read_line().await, format!("LIST VAR {ups}"));
         let mut response = format!("BEGIN LIST VAR {ups}\n");
         for (name, val) in vars {
-            response.push_str(&format!("VAR {ups} {name} \"{val}\"\n"));
+            let _ = writeln!(response, "VAR {ups} {name} \"{val}\"");
         }
-        response.push_str(&format!("END LIST VAR {ups}\n"));
+        let _ = writeln!(response, "END LIST VAR {ups}");
         self.write_all(&response).await;
     }
 
@@ -178,6 +179,16 @@ fn convert_var_multiple_dots() {
 fn convert_var_empty() {
     let var_name = "";
     let expected_metric_name = "ups_";
+
+    let metric_name = convert_var_name(var_name);
+
+    assert_eq!(metric_name, expected_metric_name);
+}
+
+#[test]
+fn convert_var_starting_with_ups_but_not_ups_dot() {
+    let var_name = "upstream.voltage";
+    let expected_metric_name = "ups_upstream_voltage";
 
     let metric_name = convert_var_name(var_name);
 

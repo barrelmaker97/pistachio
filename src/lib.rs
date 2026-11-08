@@ -300,11 +300,12 @@ pub async fn monitor_ups(
 
 fn convert_var_name(name: &str) -> String {
     let mut gauge_name = name.replace('.', "_");
-    if !gauge_name.starts_with("ups") {
+    if !gauge_name.starts_with("ups_") {
         gauge_name.insert_str(0, "ups_");
     }
     gauge_name
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used)]
 mod tests;
