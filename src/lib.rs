@@ -6,9 +6,10 @@
 
 use clap::Parser;
 use log::{debug, error, info, warn};
-use metrics::{describe_gauge, gauge};
+use metrics::{Gauge, describe_gauge, gauge};
 use rups::tokio::Connection;
 use std::collections::HashMap;
+use std::fmt;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::num::NonZeroU64;
 use std::time::Duration;
@@ -73,31 +74,130 @@ impl Args {
     }
 }
 
+/// A client that manages the connection and polling lifecycle for a single UPS on a NUT server.
+pub struct NutClient {
+    ups_name: String,
+    config: rups::Config,
+    conn: Connection,
+    is_failing: bool,
+}
+
+impl fmt::Debug for NutClient {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("NutClient")
+            .field("ups_name", &self.ups_name)
+            .field("config", &self.config)
+            .field("is_failing", &self.is_failing)
+            .finish_non_exhaustive()
+    }
+}
+
+impl NutClient {
+    /// Connects to the NUT server specified in [`Args`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the UPS host and port cannot form a valid [`rups::Host`] or if the
+    /// initial TCP connection fails.
+    pub async fn connect(args: &Args) -> Result<Self, rups::ClientError> {
+        let rups_host = rups::Host::try_from((args.ups_host.clone(), args.ups_port))?;
+        let config = rups::ConfigBuilder::new().with_host(rups_host).build();
+        let conn = Connection::new(&config).await?;
+        Ok(Self { ups_name: args.ups_name.clone(), config, conn, is_failing: false })
+    }
+
+    /// Queries the NUT server for all numeric UPS variables and their descriptions.
+    ///
+    /// Non-numeric variables are filtered out before requesting descriptions, since basic
+    /// Prometheus gauges only represent floating-point values.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the variable list or descriptions cannot be retrieved from the server.
+    pub async fn discover_numeric_vars(&mut self) -> Result<HashMap<String, String>, rups::ClientError> {
+        let available_vars = self.conn.list_vars(&self.ups_name).await?;
+        let mut ups_vars = HashMap::new();
+        for var in available_vars.iter().filter(|var| var.value().parse::<f64>().is_ok()) {
+            let description = self.conn.get_var_description(&self.ups_name, var.name()).await?;
+            ups_vars.insert(var.name().to_owned(), description);
+        }
+        Ok(ups_vars)
+    }
+
+    /// Polls all current variables for the UPS, automatically attempting to recreate the
+    /// connection when an I/O error occurs.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if polling the NUT server fails.
+    pub async fn poll_vars(&mut self) -> Result<Vec<rups::Variable>, rups::ClientError> {
+        debug!("Polling UPS...");
+        match self.conn.list_vars(&self.ups_name).await {
+            Ok(var_list) => {
+                if self.is_failing {
+                    info!("Connection with the UPS has been reestablished");
+                    self.is_failing = false;
+                }
+                Ok(var_list)
+            }
+            Err(err) => {
+                warn!("Failed to connect to the UPS: {err}");
+                self.is_failing = true;
+
+                // IO errors can cause the connection to continue failing,
+                // even once the UPS is back online. Recreating the connection
+                // resolves the issue.
+                if let rups::ClientError::Io(_) = err {
+                    debug!("Attempting to recreate connection due to IO error...");
+                    match Connection::new(&self.config).await {
+                        Ok(new_conn) => {
+                            self.conn = new_conn;
+                            debug!("Connection recreated successfully");
+                        }
+                        Err(reconnect_err) => {
+                            error!("Failed to recreate connection: {reconnect_err}");
+                        }
+                    }
+                }
+                Err(err)
+            }
+        }
+    }
+
+    /// Gracefully closes the connection to the NUT server.
+    pub async fn close(self) {
+        info!("Attempting graceful shutdown");
+        if let Err(e) = self.conn.close().await {
+            error!("Failed to close connection during shutdown: {e}");
+        }
+    }
+}
+
 /// A Prometheus gauge that tracks a set of status labels.
 #[derive(Debug)]
 struct LabelGauge {
-    name: String,
-    states: &'static [&'static str],
+    states: Vec<(&'static str, Gauge)>,
 }
 
 impl LabelGauge {
     fn register(var_name: &str, description: &'static str, states: &'static [&'static str]) -> Self {
-        let name = convert_var_name(var_name);
-        describe_gauge!(name.clone(), description);
-        debug!("Gauge {name} has been registered for var {var_name}");
-        Self { name, states }
+        let gauge_name = convert_var_name(var_name);
+        describe_gauge!(gauge_name.clone(), description);
+        debug!("Gauge {gauge_name} has been registered for var {var_name}");
+        let states = states.iter().map(|&state| (state, gauge!(gauge_name.clone(), "status" => state))).collect();
+        Self { states }
     }
 
     fn update(&self, value: &str) {
-        for &state in self.states {
+        for &(state, ref gauge) in &self.states {
             let is_active = value.split_whitespace().any(|token| token == state);
-            gauge!(self.name.clone(), "status" => state).set(u8::from(is_active));
+            gauge.set(u8::from(is_active));
         }
     }
 
     fn reset(&self) {
-        for &state in self.states {
-            gauge!(self.name.clone(), "status" => state).set(0.0);
+        for (_, gauge) in &self.states {
+            gauge.set(0.0);
         }
     }
 }
@@ -105,8 +205,8 @@ impl LabelGauge {
 /// A collection of all registered metrics, both labelled and unlabelled.
 #[derive(Debug)]
 pub struct Metrics {
-    basic_gauges: HashMap<String, String>,
-    label_gauges: HashMap<String, LabelGauge>,
+    basic_gauges: HashMap<String, Gauge>,
+    label_gauges: HashMap<&'static str, LabelGauge>,
 }
 
 impl Metrics {
@@ -119,16 +219,14 @@ impl Metrics {
                 let gauge_name = convert_var_name(name);
                 describe_gauge!(gauge_name.clone(), desc.clone());
                 debug!("Gauge {gauge_name} has been registered for var {name}");
-                (name.clone(), gauge_name)
+                (name.clone(), gauge!(gauge_name))
             })
             .collect();
 
         // Registers label gauges for UPS variables that represent a set of potential status.
         // This currently only includes overall UPS status and beeper status.
-        let label_gauges = STATUS_VARS
-            .iter()
-            .map(|&(name, desc, states)| (name.to_owned(), LabelGauge::register(name, desc, states)))
-            .collect();
+        let label_gauges =
+            STATUS_VARS.iter().map(|&(name, desc, states)| (name, LabelGauge::register(name, desc, states))).collect();
 
         Self { basic_gauges, label_gauges }
     }
@@ -144,12 +242,12 @@ impl Metrics {
     /// the UPS.
     pub fn update(&self, var_list: &[rups::Variable]) {
         for var in var_list {
-            if let Some(gauge_name) = self.basic_gauges.get(var.name()) {
+            if let Some(gauge) = self.basic_gauges.get(var.name()) {
                 // Update basic gauges
                 if let Ok(value) = var.value().parse::<f64>() {
-                    gauge!(gauge_name.clone()).set(value);
+                    gauge.set(value);
                 } else {
-                    warn!("Failed to update gauge {gauge_name} because the value was not a float");
+                    warn!("Failed to update gauge for {} because the value was not a float", var.name());
                 }
             } else if let Some(label_gauge) = self.label_gauges.get(var.name()) {
                 // Update label gauges
@@ -162,8 +260,8 @@ impl Metrics {
 
     /// Resets all metrics to zero.
     pub fn reset(&self) {
-        for gauge_name in self.basic_gauges.values() {
-            gauge!(gauge_name.clone()).set(0.0);
+        for gauge in self.basic_gauges.values() {
+            gauge.set(0.0);
         }
         for label_gauge in self.label_gauges.values() {
             label_gauge.reset();
@@ -171,92 +269,31 @@ impl Metrics {
     }
 }
 
-/// Creates a connection for communicating with the NUT server.
-///
-/// # Errors
-///
-/// An error will be returned if the UPS host and port in the provided [Args] cannot be used to
-/// create a valid [`rups::Host`] or if the connection fails.
-pub async fn create_connection(args: &Args) -> Result<Connection, rups::ClientError> {
-    let rups_host = rups::Host::try_from((args.ups_host.clone(), args.ups_port))?;
-    let rups_config = rups::ConfigBuilder::new().with_host(rups_host).build();
-    Connection::new(&rups_config).await
-}
-
-/// Connects to the NUT server to produce a map of all numeric UPS variables and their
-/// descriptions.
-///
-/// Non-numeric variables are filtered out before requesting descriptions, since basic Prometheus
-/// gauges only represent floating-point values.
-///
-/// # Errors
-///
-/// An error will be returned if the list of variables or their descriptions cannot be retrieved
-/// from the NUT server, such as if connection to the server is lost.
-pub async fn get_ups_vars(args: &Args, conn: &mut Connection) -> Result<HashMap<String, String>, rups::ClientError> {
-    let ups_name = args.ups_name.as_str();
-    let available_vars = conn.list_vars(ups_name).await?;
-    let mut ups_vars = HashMap::new();
-    for var in available_vars.iter().filter(|var| var.value().parse::<f64>().is_ok()) {
-        let description = conn.get_var_description(ups_name, var.name()).await?;
-        ups_vars.insert(var.name().to_owned(), description);
-    }
-    Ok(ups_vars)
-}
-
 /// Polls the NUT server at the configured interval and updates Prometheus metrics, resetting
-/// gauges on error and recreating the connection on I/O failures until a shutdown signal is
-/// received.
-pub async fn monitor_ups(mut conn: Connection, args: Args, metrics: Metrics, shutdown_rx: oneshot::Receiver<()>) {
-    let mut is_failing = false;
-    let mut interval = time::interval(args.poll_interval());
+/// gauges on error until a shutdown signal is received.
+pub async fn monitor_ups(
+    mut client: NutClient,
+    metrics: Metrics,
+    poll_interval: Duration,
+    shutdown_rx: oneshot::Receiver<()>,
+) {
+    let mut interval = time::interval(poll_interval);
 
     tokio::select! {
         () = async {
             loop {
                 interval.tick().await;
-                debug!("Polling UPS...");
-                match conn.list_vars(args.ups_name.as_str()).await {
-                    Ok(var_list) => {
-                        metrics.update(&var_list);
-                        debug!("Metrics updated");
-                        if is_failing {
-                            info!("Connection with the UPS has been reestablished");
-                            is_failing = false;
-                        }
-                    }
-                    Err(err) => {
-                        // Log warning and set gauges to 0 to indicate failure
-                        warn!("Failed to connect to the UPS: {err}");
-                        metrics.reset();
-                        debug!("Reset gauges to zero because the UPS was unreachable");
-                        is_failing = true;
-
-                        // IO errors can cause the connection to continue failing,
-                        // even once the UPS is back online. Recreating the connection
-                        // resolves the issue
-                        if let rups::ClientError::Io(_) = err {
-                            debug!("Attempting to recreate connection due to IO error...");
-                            // Creating new connection
-                            match create_connection(&args).await {
-                                Ok(new_conn) => {
-                                    conn = new_conn;
-                                    debug!("Connection recreated successfully");
-                                }
-                                Err(err) => {
-                                    error!("Failed to recreate connection: {err}");
-                                }
-                            }
-                        }
-                    }
+                if let Ok(var_list) = client.poll_vars().await {
+                    metrics.update(&var_list);
+                    debug!("Metrics updated");
+                } else {
+                    metrics.reset();
+                    debug!("Reset gauges to zero because the UPS was unreachable");
                 }
             }
         } => {},
         _ = shutdown_rx => {
-            info!("Attempting graceful shutdown");
-            if let Err(e) = conn.close().await {
-                error!("Failed to close connection during shutdown: {e}");
-            }
+            client.close().await;
         }
     }
 }

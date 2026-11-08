@@ -1,16 +1,10 @@
 use super::*;
-use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusRecorder};
-use std::future::Future;
+use metrics_exporter_prometheus::PrometheusBuilder;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{
     TcpListener,
     tcp::{OwnedReadHalf, OwnedWriteHalf},
 };
-
-async fn with_async_recorder<F: Future>(recorder: &PrometheusRecorder, f: F) -> F::Output {
-    let mut f = std::pin::pin!(f);
-    std::future::poll_fn(|cx| metrics::with_local_recorder(recorder, || f.as_mut().poll(cx))).await
-}
 
 struct FakeNutConn {
     reader: BufReader<OwnedReadHalf>,
@@ -131,16 +125,13 @@ fn build_metrics_basic() {
     ups_vars.insert("input.voltage".to_string(), String::from("Nominal input voltage"));
     ups_vars.insert("ups.load".to_string(), String::from("UPS load in percent"));
     ups_vars.insert("battery.charge".to_string(), String::from("Battery charge in percent"));
-    let expected_metric_name1 = convert_var_name("input.voltage");
-    let expected_metric_name2 = convert_var_name("ups.load");
-    let expected_metric_name3 = convert_var_name("battery.charge");
 
     let metrics = Metrics::build(&ups_vars);
 
     assert_eq!(metrics.basic_gauges.len(), 3);
-    assert_eq!(*metrics.basic_gauges.get("input.voltage").unwrap(), expected_metric_name1);
-    assert_eq!(*metrics.basic_gauges.get("ups.load").unwrap(), expected_metric_name2);
-    assert_eq!(*metrics.basic_gauges.get("battery.charge").unwrap(), expected_metric_name3);
+    assert!(metrics.basic_gauges.contains_key("input.voltage"));
+    assert!(metrics.basic_gauges.contains_key("ups.load"));
+    assert!(metrics.basic_gauges.contains_key("battery.charge"));
 }
 
 #[test]
@@ -276,7 +267,7 @@ fn reset_metrics_sets_all_gauges_to_zero() {
 }
 
 #[tokio::test]
-async fn create_connection_and_get_ups_vars_filters_non_float_vars() {
+async fn connect_and_discover_numeric_vars_filters_non_float_vars() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
 
@@ -296,9 +287,10 @@ async fn create_connection_and_get_ups_vars_filters_non_float_vars() {
     });
 
     let args = Args::try_parse_from(["pistachio", "--ups-port", &port.to_string()]).unwrap();
-    let mut conn = create_connection(&args).await.unwrap();
-    let ups_vars = get_ups_vars(&args, &mut conn).await.unwrap();
-    conn.close().await.unwrap();
+    let mut client = NutClient::connect(&args).await.unwrap();
+    assert!(format!("{client:?}").contains("NutClient"));
+    let ups_vars = client.discover_numeric_vars().await.unwrap();
+    client.close().await;
     server.await.unwrap();
 
     assert_eq!(ups_vars.len(), 2);
@@ -309,13 +301,13 @@ async fn create_connection_and_get_ups_vars_filters_non_float_vars() {
 }
 
 #[tokio::test]
-async fn create_connection_fails_when_unreachable() {
+async fn connect_fails_when_unreachable() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
     drop(listener);
 
     let args = Args::try_parse_from(["pistachio", "--ups-port", &port.to_string()]).unwrap();
-    let result = create_connection(&args).await;
+    let result = NutClient::connect(&args).await;
     assert!(result.is_err());
 }
 
@@ -367,13 +359,10 @@ async fn monitor_ups_polls_recovers_from_io_error_and_shuts_down() {
     });
 
     let args = Args::try_parse_from(["pistachio", "--ups-port", &port.to_string(), "--poll-rate", "5"]).unwrap();
-    with_async_recorder(&recorder, async {
-        let mut conn = create_connection(&args).await.unwrap();
-        let ups_vars = get_ups_vars(&args, &mut conn).await.unwrap();
-        let metrics = Metrics::build(&ups_vars);
-        monitor_ups(conn, args, metrics, shutdown_rx).await;
-    })
-    .await;
+    let mut client = NutClient::connect(&args).await.unwrap();
+    let ups_vars = client.discover_numeric_vars().await.unwrap();
+    let metrics = metrics::with_local_recorder(&recorder, || Metrics::build(&ups_vars));
+    monitor_ups(client, metrics, args.poll_interval(), shutdown_rx).await;
 
     server.await.unwrap();
 }
@@ -402,13 +391,10 @@ async fn monitor_ups_handles_reconnect_and_shutdown_close_errors() {
     });
 
     let args = Args::try_parse_from(["pistachio", "--ups-port", &port.to_string(), "--poll-rate", "5"]).unwrap();
-    with_async_recorder(&recorder, async {
-        let mut conn = create_connection(&args).await.unwrap();
-        let ups_vars = get_ups_vars(&args, &mut conn).await.unwrap();
-        let metrics = Metrics::build(&ups_vars);
-        monitor_ups(conn, args, metrics, shutdown_rx).await;
-    })
-    .await;
+    let mut client = NutClient::connect(&args).await.unwrap();
+    let ups_vars = client.discover_numeric_vars().await.unwrap();
+    let metrics = metrics::with_local_recorder(&recorder, || Metrics::build(&ups_vars));
+    monitor_ups(client, metrics, args.poll_interval(), shutdown_rx).await;
 
     server.await.unwrap();
 }
